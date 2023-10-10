@@ -46,7 +46,9 @@ impl Distribution<Particle> for Standard {
 }
 
 impl Particle {
-    fn compute_gravity(&self) -> Vec2 {glm::vec2(0.0, -9.8 * self.mass)}
+    fn compute_gravity(&self) -> Vec2 {
+        glm::vec2(0.0, -9.8 * self.mass)
+    }
 }
 
 #[derive(Clone, Debug)]

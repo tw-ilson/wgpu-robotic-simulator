@@ -4,17 +4,18 @@ use gl::types::*;
 use sdl2::video::GLContext;
 use sdl2::video::{GLProfile, Window};
 use sdl2::EventPump;
-use std::ffi::{CStr, CString};
 use std::collections::HashMap;
+use std::ffi::{CStr, CString};
 
 // yo mama so fat, she sat on the iphone and invented the ipad
 
-pub type GLGraphics = GraphicsContext<GLContext, Window, EventPump>;
+pub type GLGraphics = GraphicsContext<GLContext, Window, EventPump, GLuint>;
 impl GraphicsProgram for GLGraphics {
     unsafe fn create_shader_program(
+        &mut self,
         vertex_shader_source: &str,
         frag_shader_source: &str,
-    ) -> u32 {
+    ) {
         unsafe fn compile_shader(shader_type: u32, source: String) -> Result<GLuint, String> {
             // Compile our shaders
             // Based on the type passed in, we create a shader object specifically for that
@@ -58,7 +59,6 @@ impl GraphicsProgram for GLGraphics {
                     gl::DeleteShader(shader_object);
                     return Err(err);
                 }
-                // Delete our broken shader
             }
             Ok(shader_object)
         }
@@ -76,7 +76,7 @@ impl GraphicsProgram for GLGraphics {
         gl::DeleteShader(vertex_shader);
         gl::DeleteShader(fragment_shader);
 
-        program
+        self.attr_map.insert("PIPELINE".to_string(), program);
     }
     fn swap_window(&self) {
         self.window.gl_swap_window();
