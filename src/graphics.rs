@@ -3,6 +3,11 @@ extern crate sdl2;
 use gl::types::*;
 use std::collections::HashMap;
 use std::sync::Arc;
+#[derive(Copy, Clone, Debug)]
+pub struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
 
 #[derive(Clone)]
 pub struct GraphicsContext
