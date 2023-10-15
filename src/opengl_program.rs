@@ -10,6 +10,19 @@ use std::ffi::{CStr, CString};
 // yo mama so fat, she sat on the iphone and invented the ipad
 
 pub type GLGraphics = GraphicsContext<GLContext, Window, EventPump, GLuint>;
+impl GLGraphics {
+    pub fn run_loop(&mut self) {
+        (self.preloop_fn)(self);
+        while !self.quit_loop {
+            (self.input_fn)(self);
+            (self.update_fn)(self);
+            (self.render_fn)(self);
+            if self.backend_initialized {
+                self.swap_window();
+            }
+        }
+    }
+}
 impl GraphicsProgram for GLGraphics {
     unsafe fn create_shader_program(
         &mut self,
@@ -130,10 +143,10 @@ impl GraphicsProgram for GLGraphics {
         }
     }
     fn new(width: u32, height: u32) -> Self {
-        let sdl = Box::new(match sdl2::init() {
+        let sdl = match sdl2::init() {
             Ok(sdl) => sdl,
             Err(e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
-        });
+        };
         let video_subsystem = Box::new(match sdl.video() {
             Ok(video_subsystem) => video_subsystem,
             Err(e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
@@ -145,7 +158,7 @@ impl GraphicsProgram for GLGraphics {
         attrs.set_context_profile(GLProfile::Core);
         attrs.set_double_buffer(true);
         attrs.set_depth_size(24);
-        let window = Box::new(
+        let window = 
             match video_subsystem
                 .window("physics-engine", width, height)
                 .opengl()
@@ -153,26 +166,25 @@ impl GraphicsProgram for GLGraphics {
             {
                 Ok(window) => window,
                 Err(e) => panic!("Failed to initialize SDL! {}\n{}", e, sdl2::get_error()),
-            },
-        );
-        let opengl_context = Box::new(match window.gl_create_context() {
+            };
+        let opengl_context = match window.gl_create_context() {
             Ok(opengl_context) => {
                 //Initialize function pointers to opengl
                 gl::load_with(|s| video_subsystem.gl_get_proc_address(s).cast());
                 opengl_context
             }
             Err(e) => panic!("Failed to initialize OpenGL!{}\n{}", e, sdl2::get_error()),
-        });
-        let event = Box::new(match sdl.event_pump() {
+        };
+        let event = match sdl.event_pump() {
             Ok(event) => event,
             Err(e) => panic!("Failed to initialize OpenGL!{}\n{}", e, sdl2::get_error()),
-        });
+        };
 
+        // set function pointers to nop
         fn void_fn(p: &mut GLGraphics) {
             panic!("No callback function set!");
         }
         Self {
-            // set function pointers to nop
             attr_map: HashMap::new(),
             preloop_fn: void_fn,
             input_fn: void_fn,

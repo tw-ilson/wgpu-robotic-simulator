@@ -25,9 +25,9 @@ pub struct GraphicsContext
     // window
     pub width: u32,
     pub height: u32,
-    pub backend: Box<B>,
-    pub window: Box<W>,
-    pub event: Box<E>,
+    pub backend: B,
+    pub window: W,
+    pub event: E,
 
     // flags
     pub quit_loop: bool,
@@ -46,17 +46,6 @@ where
 {
     pub fn quit(&mut self) {
         self.quit_loop = true;
-    }
-    pub fn run_loop(&mut self) {
-        (self.preloop_fn)(self);
-        while !self.quit_loop {
-            (self.input_fn)(self);
-            (self.update_fn)(self);
-            (self.render_fn)(self);
-            if self.backend_initialized {
-                self.swap_window();
-            }
-        }
     }
     pub fn set_clear_color(&mut self, (r, g, b, a): (f32, f32, f32, f32)) {
         self.red_channel_bg = r;

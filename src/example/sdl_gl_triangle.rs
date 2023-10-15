@@ -1,5 +1,5 @@
-use crate::opengl_program::GLGraphics;
 use crate::graphics::GraphicsProgram;
+use crate::opengl_program::GLGraphics;
 
 fn preloop(program: &mut GLGraphics) {
     println!("Called one time before the loop!");
@@ -91,8 +91,12 @@ unsafe fn vertex_specification(program: &mut GLGraphics) {
     gl::DisableVertexAttribArray(0);
     gl::DisableVertexAttribArray(1);
 
-    program.attr_map.insert("VAO".to_string(), vertex_array_object);
-    program.attr_map.insert("VBO".to_string(), vertex_buffer_object);
+    program
+        .attr_map
+        .insert("VAO".to_string(), vertex_array_object);
+    program
+        .attr_map
+        .insert("VBO".to_string(), vertex_buffer_object);
 }
 pub fn enter_program() {
     let vert_string = include_str!("../../shaders/vert.glsl");
@@ -102,13 +106,19 @@ pub fn enter_program() {
     let mut program = GLGraphics::new(600, 600);
 
     // set callbacks
-    program.preloop_fn = preloop; program.input_fn = input; program.update_fn = update; program.render_fn = render;
-
+    program.preloop_fn = preloop;
+    program.input_fn = input;
+    program.update_fn = update;
+    program.render_fn = render;
     // Create pipeline from vertex, fragment shaders
-    unsafe { program.create_shader_program(vert_string, frag_string); }
+    unsafe {
+        program.create_shader_program(vert_string, frag_string);
+    }
 
     // Create buffers from vertex specification
-    unsafe { vertex_specification(&mut program); }
+    unsafe {
+        vertex_specification(&mut program);
+    }
 
     // program.get_backend_info();
     program.run_loop()

@@ -3,7 +3,9 @@ use crate::util::print_type_of;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
+use std::sync::{Arc, Mutex};
 use wgpu::{Adapter, Device, Instance, Surface};
+use winit::event::{KeyboardInput, ElementState, VirtualKeyCode};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -91,12 +93,12 @@ impl GraphicsProgram for WGPUGraphics {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &compile_shader(vertex_shader_source, &self.backend.device, Vertex),
-                entry_point: "vs_main",
+                entry_point: "main",
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &compile_shader(frag_shader_source, &self.backend.device, Fragment),
-                entry_point: "fs_main",
+                entry_point: "main",
                 targets: &[Some(swapchain_format.into())],
             }),
             primitive: wgpu::PrimitiveState::default(),
@@ -129,7 +131,7 @@ impl GraphicsProgram for WGPUGraphics {
         surface.configure(&self.backend.device, &config);
     }
     fn new(width: u32, height: u32) -> Self {
-        let event = Box::new(EventLoop::new());
+        let event = EventLoop::new();
         let window = Window::new(&event).expect("unable to create winit window");
         window.set_inner_size(LogicalSize::new(width, height));
         let instance = wgpu::Instance::default();
@@ -146,9 +148,9 @@ impl GraphicsProgram for WGPUGraphics {
             render_fn: void_fn,
             width,
             height,
-            window: Box::new(window),
+            window,
             event,
-            backend: Box::new(WGPUState{ instance, surface, adapter , device, queue}),
+            backend: WGPUState{ instance, surface, adapter , device, queue},
             quit_loop: false,
             sdl_initialized: true,
             backend_initialized: true,
