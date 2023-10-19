@@ -1,4 +1,4 @@
-use crate::graphics::{GraphicsContext, GraphicsProgram};
+use crate::graphics::{GraphicsContext, GraphicsProgram, ContextFlags, Color};
 use crate::util::print_type_of;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -56,13 +56,42 @@ pub struct WGPUState {
     queue: wgpu::Queue
 }
 
-pub type WGPUGraphics = GraphicsContext<WGPUState, Window, EventLoop<()>, WGPUResource>;
+pub type WGPUGraphics = GraphicsContext<WGPUState, Window, WGPUResource>;
 impl WGPUGraphics {
     pub fn instance(&self) -> &wgpu::Instance { &self.backend.instance }
     pub fn adapter(&self) -> &wgpu::Adapter { &self.backend.adapter }
     pub fn device(&self) -> &wgpu::Device { &self.backend.device }
     pub fn surface(&self) -> &wgpu::Surface { &self.backend.surface }
     pub fn queue(&self) -> &wgpu::Queue { &self.backend.queue }
+    pub fn new(width: u32, height: u32, event: &EventLoop<()>) -> Self {
+        let window = Window::new(event).expect("unable to create winit window");
+        window.set_inner_size(LogicalSize::new(width, height));
+        let instance = wgpu::Instance::default();
+        let surface = unsafe { instance.create_surface(&window) }.expect("unable to create surface");
+        let (adapter, device, queue) = retrieve_adapter_device(&instance, &window, &surface);
+        fn void_fn(_p: &mut WGPUGraphics) {
+            panic!("No callback function set!");
+        }
+        Self {
+            attr_map: HashMap::new(),
+            width,
+            height,
+            window,
+            // event,
+            backend: WGPUState{ instance, surface, adapter , device, queue},
+            flags: ContextFlags {
+                quit_loop: false,
+                sdl_initialized: true,
+                backend_initialized: true,
+            },
+            bg_color: Color {
+                r: 0.2,
+                b: 0.2,
+                g: 0.2,
+                a: 0.2,
+            }
+        }
+    }
 }
 impl GraphicsProgram for WGPUGraphics {
     unsafe fn create_shader_program(
@@ -129,35 +158,5 @@ impl GraphicsProgram for WGPUGraphics {
         };
 
         surface.configure(&self.backend.device, &config);
-    }
-    fn new(width: u32, height: u32) -> Self {
-        let event = EventLoop::new();
-        let window = Window::new(&event).expect("unable to create winit window");
-        window.set_inner_size(LogicalSize::new(width, height));
-        let instance = wgpu::Instance::default();
-        let surface = unsafe { instance.create_surface(&window) }.expect("unable to create surface");
-        let (adapter, device, queue) = retrieve_adapter_device(&instance, &window, &surface);
-        fn void_fn(_p: &mut WGPUGraphics) {
-            panic!("No callback function set!");
-        }
-        Self {
-            attr_map: HashMap::new(),
-            preloop_fn: void_fn,
-            input_fn: void_fn,
-            update_fn: void_fn,
-            render_fn: void_fn,
-            width,
-            height,
-            window,
-            event,
-            backend: WGPUState{ instance, surface, adapter , device, queue},
-            quit_loop: false,
-            sdl_initialized: true,
-            backend_initialized: true,
-            red_channel_bg: 0.2,
-            blue_channel_bg: 0.2,
-            green_channel_bg: 0.2,
-            alpha_channel_bg: 0.2,
-        }
     }
 }

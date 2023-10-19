@@ -1,78 +1,69 @@
-use crate::graphics::GraphicsProgram;
 use crate::opengl_program::GLGraphics;
-
+use crate::physics;
 unsafe fn vertex_specification(program: &mut GLGraphics) {
+    let MAX_PARTICLES = 300;
     use std::ffi::c_void;
     use std::mem::size_of;
-    let mut vertex_array_object: u32 = 0;
-    let mut vertex_buffer_object: u32 = 0;
-    let mut vertex_data: Vec<f32> = vec![
-        -0.8, -0.8, 0.0, // Let vertex position
-        1.0, 0.0, 0.0, // Let vertex color
-        0.8, -0.8, 0.0, // right vertex position
-        0.0, 1.0, 0.0, // right vertex color
-        0.0, 0.8, 0.0, // Top vertex position
-        0.0, 0.0, 1.0, // Top vertex color
-    ];
-    gl::GenVertexArrays(1, &mut vertex_array_object);
-    gl::BindVertexArray(vertex_array_object);
 
-    gl::GenBuffers(1, &mut vertex_buffer_object);
-    gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer_object);
+    let mut vertex_buffer: u32 = 0;
+    let mut particle_posn_buffer: u32 = 0;
+    let mut particle_color_buffer: u32 = 0;
+
+    let mut vertex_data: Vec<f32> = vec![
+         -0.5, -0.5, 0.0,
+         0.5, -0.5, 0.0,
+         -0.5, 0.5, 0.0,
+         0.5, 0.5, 0.0,
+    ];
+
+    gl::GenBuffers(1, &mut vertex_buffer);
+    gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
     gl::BufferData(
         gl::ARRAY_BUFFER, // Kind of buffer we are working with
         (vertex_data.len() * size_of::<f32>()) as isize, // Size of data in bytes
         vertex_data.as_mut_ptr() as *const _, // Raw array of data
-        gl::STATIC_DRAW,
-    ); // How we intend to use the data
+        gl::STATIC_DRAW);
 
-    let posn_stride = (size_of::<f32>() * 6) as i32;
-    let color_stride = posn_stride;
-    let posn_offset = 0 as *const c_void;
-    let color_offset = (size_of::<f32>() * 3) as *const c_void;
+    gl::GenBuffers(1, &mut particle_posn_buffer);
+    gl::BindBuffer(gl::ARRAY_BUFFER, particle_posn_buffer);
+    gl::BufferData(
+        gl::ARRAY_BUFFER,
+        MAX_PARTICLES * 4 * size_of::<f32>() as isize,
+        std::ptr::null(), //this will be updated each frame
+        gl::STREAM_DRAW);
+    
+    gl::GenBuffers(1, &mut particle_color_buffer);
+    gl::BindBuffer(gl::ARRAY_BUFFER, particle_color_buffer);
+    gl::BufferData(
+        gl::ARRAY_BUFFER,
+        MAX_PARTICLES * 4 * size_of::<f32>() as isize,
+        std::ptr::null(),
+        gl::STREAM_DRAW);
 
-    gl::EnableVertexAttribArray(0);
-    gl::VertexAttribPointer(
-        0,         // Attribute 0 corresponds to the enabled gl::EnableVertexAttribArray
-        3,         // The number of components (e.g. x,y,z = 3 components)
-        gl::FLOAT, // Type
-        gl::FALSE, // Is the data normalized
-        posn_stride,
-        posn_offset, // Offset
-    );
-
-    gl::EnableVertexAttribArray(1);
-    gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, color_stride, color_offset);
-
-    gl::BindVertexArray(0);
-    gl::DisableVertexAttribArray(0);
-    gl::DisableVertexAttribArray(1);
-
+    // program
+    //     .attr_map
+    //     .insert("VAO".to_string(), vertex_array_object);
     program
         .attr_map
-        .insert("VAO".to_string(), vertex_array_object);
-    program
-        .attr_map
-        .insert("VBO".to_string(), vertex_buffer_object);
+        .insert("VBO".to_string(), vertex_buffer);
 }
-pub fn run_loop(mut program: GLGraphics) {
-    program.preloop(&mut |program| {
+fn run_loop(mut program: GLGraphics) {
+    program.preloop(|program| {
         println!("Called one time before the loop!");
     });
-    let mut event_pump = program.sdl().event_pump().unwrap();
-    while !program.flags.quit_loop {
-        program.input(&mut |program| {
+    while !program.quit_loop {
+        program.input(|program| {
             use sdl2::event::Event;
             use sdl2::keyboard::Scancode;
-            let ep = event_pump.poll_iter();
+            let ep = program.event.poll_iter();
             for event in ep {
                 if let Event::Quit { .. } = event {
                     return program.quit();
                 }
             }
         });
-        program.update(&mut |program| {});
-        program.render(&mut |program| {
+        program.update(|program| {});
+        program.render(|program| {
             // program.default_state();
             // Enable our attributes
             program.set_clear_color((1.0, 1.0, 0.0, 1.0));
@@ -96,7 +87,7 @@ pub fn run_loop(mut program: GLGraphics) {
                 gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
                 gl::DrawArrays(gl::TRIANGLES, 0, 3);
             }
-            if program.flags.backend_initialized {
+            if program.backend_initialized {
                 program.swap_window();
             }
         });
@@ -105,8 +96,8 @@ pub fn run_loop(mut program: GLGraphics) {
 pub fn enter_program() {
     let vert_string = include_str!("../../shaders/vert.glsl");
     let frag_string = include_str!("../../shaders/frag.glsl");
-    // let mut sim = physics::ParticleSim::new();
-    // sim.setup("");
+    let mut sim = physics::ParticleSim::new();
+    sim.setup("");
     let mut program = GLGraphics::new(600, 600);
 
     // Create pipeline from vertex, fragment shaders

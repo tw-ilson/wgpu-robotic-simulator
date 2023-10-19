@@ -15,4 +15,5 @@ use wgpu_program::*;
 fn main() {
     // example::sdl_gl_triangle::enter_program()
     example::wgpu_triangle::enter_program()
+    // example::particles::enter_program()
 }
