@@ -173,7 +173,7 @@ impl GraphicsProgram for GLGraphics {
             }
         }
     }
-    fn default_state(&self) {
+    fn default_state(&mut self) {
         if self.flags.backend_initialized {
             unsafe {
                 gl::Viewport(

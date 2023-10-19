@@ -6,6 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bytemuck = "1.14.0"
+cfg-if = "1.0.0"
+env_logger = "0.10.0"
 futures = "0.3.28"
 gl = "0.14.0"
 mint = "0.5.9"

@@ -1,13 +1,21 @@
 extern crate gl;
 extern crate sdl2;
 use std::collections::HashMap;
+use bytemuck::cast_slice;
+
+pub struct Triangle {
+    pub vertices: [Vertex;3]
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
+    pub position: [f32; 3],
+    pub color: [f32; 3],
 }
+unsafe impl bytemuck::Pod for Vertex {}
+unsafe impl bytemuck::Zeroable for Vertex {}
+pub fn vertex_bytes(v: &Vec<Vertex>) -> &[u8] { cast_slice(v.as_slice()) }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -54,23 +62,29 @@ where
     pub fn set_clear_color(&mut self, (r, g, b, a): (f32, f32, f32, f32)) {
         self.bg_color = Color { r, g, b, a };
     }
+    // why am I doing this?
+    // closures capture calling scope
     pub fn preloop<F>(&mut self, f: &mut F)
-        where F: FnMut(&mut GraphicsContext<B, W, R>)
+    where
+        F: FnMut(&mut GraphicsContext<B, W, R>),
     {
         f(self)
     }
     pub fn input<F>(&mut self, f: &mut F)
-        where F: FnMut(&mut GraphicsContext<B, W, R>)
+    where
+        F: FnMut(&mut GraphicsContext<B, W, R>),
     {
         f(self)
     }
     pub fn update<F>(&mut self, f: &mut F)
-        where F: FnMut(&mut GraphicsContext<B, W, R>)
+    where
+        F: FnMut(&mut GraphicsContext<B, W, R>),
     {
         f(self)
     }
     pub fn render<F>(&mut self, f: &mut F)
-        where F: FnMut(&mut GraphicsContext<B, W, R>)
+    where
+        F: FnMut(&mut GraphicsContext<B, W, R>),
     {
         f(self)
     }
@@ -78,12 +92,12 @@ where
 
 pub trait GraphicsProgram {
     // fn new(width: u32, height: u32) -> Self;
-    unsafe fn create_shader_program(
-        &mut self,
-        vertex_shader_source: &str,
-        frag_shader_source: &str,
-    );
+    // unsafe fn create_shader_program(
+    //     &mut self,
+    //     vertex_shader_source: &str,
+    //     frag_shader_source: &str,
+    // );
     fn swap_window(&self);
     fn get_backend_info(&self);
-    fn default_state(&self);
+    fn default_state(&mut self);
 }
