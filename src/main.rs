@@ -4,6 +4,8 @@ mod graphics;
 mod physics;
 mod util;
 mod wgpu_program;
+mod camera;
+extern crate nalgebra_glm as glm;
 
 // use util::print_type_of;
 use graphics::{GraphicsContext, GraphicsProgram};

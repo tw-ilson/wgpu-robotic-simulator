@@ -9,9 +9,15 @@ pub struct Triangle {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
+// pub struct Vertex {
+//     pub position: [f32; 3],
+//     pub color: [f32; 3],
+//     pub normal: [f32; 3],
+// }
 pub struct Vertex {
-    pub position: [f32; 3],
-    pub color: [f32; 3],
+    pub position: glm::Vec3,
+    pub color: glm::Vec3,
+    pub normal: glm::Vec3,
 }
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}

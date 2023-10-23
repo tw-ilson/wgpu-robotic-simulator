@@ -1,19 +1,13 @@
 use crate::graphics::{Vertex, vertex_bytes, GraphicsContext, GraphicsProgram, ContextFlags, Color};
-use crate::util::print_type_of;
-use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ffi::{CStr, CString};
-use std::sync::{Arc, Mutex};
-use wgpu::{Adapter, Device, Instance, Surface, util::DeviceExt};
-use winit::event::{KeyboardInput, ElementState, VirtualKeyCode};
+use wgpu::{Device, Surface, util::DeviceExt};
 use winit::{
-    dpi::{LogicalSize, PhysicalSize},
-    event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    dpi::PhysicalSize,
+    event_loop::EventLoop,
     window::Window,
 };
 
-fn retrieve_adapter_device(instance: &wgpu::Instance, window: &Window, surface: &Surface) 
+fn retrieve_adapter_device(instance: &wgpu::Instance, window: &Window) 
 -> (wgpu::Adapter, wgpu::Device, wgpu::Queue) {
     let device_fut = async {
         let adapter = instance
@@ -49,8 +43,8 @@ fn retrieve_adapter_device(instance: &wgpu::Instance, window: &Window, surface: 
 }
 impl Vertex {
     // needs to be changed if Vertex is changed.
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+    const ATTRIBS: [wgpu::VertexAttribute; 3] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3];
 
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
@@ -86,7 +80,7 @@ impl WGPUGraphics {
         &mut self,
         shader_source: &str,
     ) {
-        fn compile_shader(source: &str, device: &Device, shader_type: Option<naga::ShaderStage>) -> wgpu::ShaderModule {
+        fn compile_shader(source: &str, device: &Device, _: Option<naga::ShaderStage>) -> wgpu::ShaderModule {
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Shader"),
                 source: wgpu::ShaderSource::Wgsl(source.into()),
@@ -101,8 +95,6 @@ impl WGPUGraphics {
             // })
         }
         let shader_module = compile_shader(shader_source, self.device(), None);
-        let swapchain_capabilities = self.backend.surface.get_capabilities(&self.backend.adapter);
-        let swapchain_format = swapchain_capabilities.formats[0];
         let pipeline_layout = self.backend.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
             bind_group_layouts: &[],
@@ -187,8 +179,7 @@ impl WGPUGraphics {
         window.set_inner_size(size);
         let instance = wgpu::Instance::default();
         let surface = unsafe { instance.create_surface(&window) }.expect("unable to create surface");
-        let (adapter, device, queue) = retrieve_adapter_device(&instance, &window, &surface); 
-        fn void_fn(_p: &mut WGPUGraphics) { panic!("No callback function set!"); }
+        let (adapter, device, queue) = retrieve_adapter_device(&instance, &window); 
         let mut program = Self {
             attr_map: HashMap::new(),
             width,

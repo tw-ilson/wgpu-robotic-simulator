@@ -6,23 +6,22 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
-// put them on the heap
-fn vertex_specification() -> Vec<Vertex> {
+fn verts1() -> Vec<Vertex> {
     vec![
         Vertex {
-            position: [0.0, 0.5, 0.0].into(),
-            color: [1.0, 0.0, 0.0].into(),
-            normal: [0.0, 0.0, 0.0].into(),
+            position: glm::vec3(0.0, 0.5, 0.0),
+            color: glm::vec3(1.0, 0.0, 0.0),
+            normal: glm::vec3(0.0, 0.0, 0.0),
         },
         Vertex {
-            position: [-0.5, -0.5, 0.0].into(),
-            color: [0.0, 1.0, 0.0].into(),
-            normal: [0.0, 0.0, 0.0].into(),
+            position: glm::vec3(-0.5, -0.5, 0.0),
+            color: glm::vec3(0.0, 1.0, 0.0),
+            normal: glm::vec3(0.0, 0.0, 0.0),
         },
         Vertex {
-            position: [0.5, -0.5, 0.0].into(),
-            color: [0.0, 0.0, 1.0].into(),
-            normal: [0.0, 0.0, 0.0].into(),
+            position: glm::vec3(0.5, -0.5, 0.0),
+            color: glm::vec3(0.0, 0.0, 1.0),
+            normal: glm::vec3(0.0, 0.0, 0.0),
         },
     ]
 }
@@ -132,7 +131,7 @@ pub fn enter_program() {
     unsafe {
         program.create_shader_program(shader_string);
     }
-    let vertices = vertex_specification();
+    let vertices = verts1();
     // program.get_backend_info();
     run_loop(program, event_loop, vertices);
 }
