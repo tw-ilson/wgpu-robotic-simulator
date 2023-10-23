@@ -1,4 +1,5 @@
-use crate::graphics::{Vertex, vertex_bytes, GraphicsContext, GraphicsProgram, ContextFlags, Color};
+use crate::graphics::{Vertex,  GraphicsContext, GraphicsProgram, ContextFlags, Color};
+use bytemuck::{Zeroable, Pod, cast_slice};
 use std::collections::HashMap;
 use wgpu::{Device, Surface, util::DeviceExt};
 use winit::{
@@ -6,6 +7,15 @@ use winit::{
     event_loop::EventLoop,
     window::Window,
 };
+
+// changes from OPENGL coordinate system to DIRECTX coordinate system
+#[rustfmt::skip]
+pub const OPENGL_TO_WGPU_MATRIX: glm::Mat4 = glm::Mat4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.5,
+    0.0, 0.0, 0.0, 1.0,
+);
 
 fn retrieve_adapter_device(instance: &wgpu::Instance, window: &Window) 
 -> (wgpu::Adapter, wgpu::Device, wgpu::Queue) {
@@ -71,11 +81,33 @@ pub struct WGPUState {
     queue: wgpu::Queue,
     config: Option<wgpu::SurfaceConfiguration>,
     render_pipeline: Option<wgpu::RenderPipeline>,
-    num_vertices: Option<u32>
+    num_vertices: Option<u32>,
+    num_indices: Option<u32>,
 }
 
 pub type WGPUGraphics = GraphicsContext<WGPUState, Window, wgpu::Buffer>;
 impl WGPUGraphics {
+      
+
+    // convenience accessors for state
+    pub fn size(&self) -> &winit::dpi::PhysicalSize<u32> { return &self.backend.size }
+    pub fn instance(&self) -> &wgpu::Instance { &self.backend.instance }
+    pub fn adapter(&self) -> &wgpu::Adapter { &self.backend.adapter }
+    pub fn device(&self) -> &wgpu::Device { &self.backend.device }
+    pub fn surface(&self) -> &wgpu::Surface { &self.backend.surface }
+    pub fn queue(&self) -> &wgpu::Queue { &self.backend.queue }
+    pub fn pipeline(&self) -> &wgpu::RenderPipeline { 
+        if let Some(pipeline) = &self.backend.render_pipeline {pipeline} else {panic!("Accessed pipeline before creation!")}
+    }
+    pub fn config(&self) -> &wgpu::SurfaceConfiguration { 
+        if let Some(config) = &self.backend.config {config}
+        else {panic!("Accessed configuration before adapter configured")} 
+    }
+    pub fn n_vert(&self) -> u32 {self.backend.num_vertices.unwrap_or(0)}
+    pub fn n_indices(&self) -> u32 {self.backend.num_indices.unwrap_or(0)}
+
+
+    // create shader pipeline 
     pub unsafe fn create_shader_program(
         &mut self,
         shader_source: &str,
@@ -144,32 +176,27 @@ impl WGPUGraphics {
         self.backend.render_pipeline = Some(render_pipeline);
          // self.attr_map.insert(String::from("PIPELINE"), WGPUResource::Pipeline(render_pipeline));
     }
-    fn create_buffer(&self, name: &str, data: &[u8], usage: wgpu::BufferUsages) -> wgpu::Buffer {
-        self.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+
+    
+    // helpers to create buffers
+    fn create_buffer<T: Zeroable + Pod>(&mut self, name: &str, data: Vec<T>, usage: wgpu::BufferUsages) -> wgpu::Buffer {
+        let buffer = self.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(name),
-            contents: data,
+            contents: cast_slice(data.as_slice()),
             usage,
-        })
+        });
+        // self.attr_map.insert(String::from(name), buffer);
+        buffer
     }
     pub fn create_vertex_buffer(&mut self, vertices: Vec<Vertex>) -> wgpu::Buffer {
         self.backend.num_vertices = Some(vertices.len() as u32);
-        self.create_buffer("Vertex Buffer", vertex_bytes(&vertices), wgpu::BufferUsages::VERTEX)
+        self.create_buffer("Vertex Buffer", vertices, wgpu::BufferUsages::VERTEX)
     }
-    // convenience accessors for state
-    pub fn size(&self) -> &winit::dpi::PhysicalSize<u32> { return &self.backend.size }
-    pub fn instance(&self) -> &wgpu::Instance { &self.backend.instance }
-    pub fn adapter(&self) -> &wgpu::Adapter { &self.backend.adapter }
-    pub fn device(&self) -> &wgpu::Device { &self.backend.device }
-    pub fn surface(&self) -> &wgpu::Surface { &self.backend.surface }
-    pub fn queue(&self) -> &wgpu::Queue { &self.backend.queue }
-    pub fn pipeline(&self) -> &wgpu::RenderPipeline { 
-        if let Some(pipeline) = &self.backend.render_pipeline {pipeline} else {panic!("Accessed pipeline before creation!")}
+    pub fn create_index_buffer(&mut self, indices: Vec<u16>) -> wgpu::Buffer {
+        self.backend.num_indices = Some(indices.len() as u32);
+        self.create_buffer("Index Buffer", indices, wgpu::BufferUsages::INDEX)
     }
-    pub fn config(&self) -> &wgpu::SurfaceConfiguration { 
-        if let Some(config) = &self.backend.config {config}
-        else {panic!("Accessed configuration before adapter configured")} 
-    }
-    pub fn n_vert(&self) -> u32 {self.backend.num_vertices.unwrap_or(0)}
+
 
     //constructor
     pub fn new(width: u32, height: u32, event: &EventLoop<()>) -> Self {
@@ -195,7 +222,8 @@ impl WGPUGraphics {
                 size, 
                 config:None,
                 render_pipeline:None,
-                num_vertices:None
+                num_vertices:None,
+                num_indices:None,
             },
             flags: ContextFlags {
                 quit_loop: false,

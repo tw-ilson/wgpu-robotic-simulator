@@ -1,4 +1,4 @@
-use crate::graphics::{Vertex};
+use crate::graphics::{GraphicsProgram, Vertex};
 use crate::wgpu_program::WGPUGraphics;
 // use futures::lock::Mutex;
 use winit::{
@@ -6,11 +6,16 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
-fn verts1() -> Vec<Vertex> {
+fn verts() -> Vec<Vertex> {
     vec![
         Vertex {
-            position: glm::vec3(0.0, 0.5, 0.0),
+            position: glm::vec3(-0.5, 0.5, 0.0),
             color: glm::vec3(1.0, 0.0, 0.0),
+            normal: glm::vec3(0.0, 0.0, 0.0),
+        },
+        Vertex {
+            position: glm::vec3(0.5, 0.5, 0.0),
+            color: glm::vec3(0.0, 0.0, 1.0),
             normal: glm::vec3(0.0, 0.0, 0.0),
         },
         Vertex {
@@ -26,9 +31,17 @@ fn verts1() -> Vec<Vertex> {
     ]
 }
 
-pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>, vertices:Vec<Vertex>) {
+fn indices() -> Vec<u16> {vec![
+    1, 2, 3,
+    2, 1, 0,
+]}
+
+
+
+pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // Create buffer
-    let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(vertices);
+    let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(verts());
+    let index_buffer: wgpu::Buffer = program.create_index_buffer(indices());
 
     program.preloop(&mut |_| {
         println!("Called one time before the loop!");
@@ -75,7 +88,8 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>, vertices:V
                         let pipeline = p.pipeline();
                         render_pass.set_pipeline(pipeline);
                         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        render_pass.draw(0..p.n_vert(), 0..1);
+                        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                        render_pass.draw_indexed(0..p.n_indices(), 0, 0..1);
                     }
 
                     // submit will accept anything that implements IntoIter
@@ -125,13 +139,12 @@ pub fn enter_program() {
     // sim.setup("");
 
     let event_loop = winit::event_loop::EventLoop::new();
-    let mut program = WGPUGraphics::new(400, 400, &event_loop);
+    let mut program = WGPUGraphics::new(800, 800, &event_loop);
 
     // Create pipeline from vertex, fragment shaders
     unsafe {
         program.create_shader_program(shader_string);
     }
-    let vertices = verts1();
-    // program.get_backend_info();
-    run_loop(program, event_loop, vertices);
+    program.get_backend_info();
+    run_loop(program, event_loop);
 }

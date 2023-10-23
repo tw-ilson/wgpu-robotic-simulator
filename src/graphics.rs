@@ -1,7 +1,6 @@
 extern crate gl;
 extern crate sdl2;
 use std::collections::HashMap;
-use bytemuck::cast_slice;
 
 pub struct Triangle {
     pub vertices: [Vertex;3]
@@ -9,11 +8,6 @@ pub struct Triangle {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-// pub struct Vertex {
-//     pub position: [f32; 3],
-//     pub color: [f32; 3],
-//     pub normal: [f32; 3],
-// }
 pub struct Vertex {
     pub position: glm::Vec3,
     pub color: glm::Vec3,
@@ -21,7 +15,6 @@ pub struct Vertex {
 }
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
-pub fn vertex_bytes(v: &Vec<Vertex>) -> &[u8] { cast_slice(v.as_slice()) }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -97,12 +90,6 @@ where
 }
 
 pub trait GraphicsProgram {
-    // fn new(width: u32, height: u32) -> Self;
-    // unsafe fn create_shader_program(
-    //     &mut self,
-    //     vertex_shader_source: &str,
-    //     frag_shader_source: &str,
-    // );
     fn swap_window(&self);
     fn get_backend_info(&self);
     fn default_state(&mut self);

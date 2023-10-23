@@ -1,26 +1,37 @@
+
 struct Camera {
     old_mouse_posn: glm::Vec2,
     eye_posn: glm::Vec3,
     view_direction: glm::Vec3,
     up_vector: glm::Vec3,
+    aspect:f32, 
+    fovy: f32,
+    znear: f32,
+    zfar: f32,
 }
 
 impl Camera {
-    fn new() -> Self {
+    fn get_view_projection_matrix(&self) -> glm::Mat4 {
+        let view = glm::look_at(
+            &self.eye_posn,
+            &(self.eye_posn + self.view_direction),
+            &self.up_vector,
+        );
+        let proj = glm::perspective(self.aspect, self.fovy, self.znear, self.zfar);
+        proj * view
+    }
+    fn new(w: u32, h: u32) -> Self {
         println!("Created a Camera");
         Self {
             old_mouse_posn: glm::vec2(0.0, 0.0),
             eye_posn: glm::vec3(0.0, 0.0, 0.0),
             view_direction: glm::vec3(0.0, 0.0, -1.0),
             up_vector: glm::vec3(0.0, 1.0, 0.0),
+            aspect: (w as f32)/(h as f32),
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0
         }
-    }
-    fn get_view_matrix(&self) -> glm::Mat4 {
-        glm::look_at(
-            &self.eye_posn,
-            &(self.eye_posn + self.view_direction),
-            &self.up_vector,
-        )
     }
     fn mouse_look(&mut self, mouse_x: isize, mouse_y: isize) {}
     fn move_forward(&mut self, speed: f32) {
