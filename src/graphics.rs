@@ -1,8 +1,9 @@
 use std::collections::HashMap;
+// use std::hash::{Hash, Hasher};
 use std::cell::RefCell;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Vertex {
     pub position: glm::Vec3,
     pub color: glm::Vec3,
