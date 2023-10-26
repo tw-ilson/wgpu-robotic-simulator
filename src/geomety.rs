@@ -13,8 +13,10 @@ struct Polyhedron {
     edges: Vec<(u16,u16)>
 }
 impl From<Vec<Triangle>> for Polyhedron {
-    fn from(value: Vec<Triangle>) -> Self {
-
+    fn from(values: Vec<Triangle>) -> Self {
+       let verts: Vec<Rc<Vertex>> = values.iter().flat_map(|tri|{&tri.vertices}).collect();
+       // println!("{}", verts);
+       unimplemented!()
     }
 }
 impl Into<Vec<Triangle>> for Polyhedron {
