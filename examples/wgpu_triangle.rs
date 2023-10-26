@@ -1,47 +1,39 @@
-use crate::graphics::{GraphicsProgram, Vertex};
-use crate::wgpu_program::WGPUGraphics;
+#[cfg(target_arch="wasm32")]
+use wasm_bindgen::prelude::*;
+
+// use std::log;
+use physics_engine::graphics::Vertex;
+use physics_engine::wgpu_program::WGPUGraphics;
 // use futures::lock::Mutex;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
 };
 
-fn verts() -> Vec<Vertex> {
+// put them on the heap
+fn vertex_specification() -> Vec<Vertex> {
     vec![
         Vertex {
-            position: glm::vec3(-0.5, 0.5, 0.0),
-            color: glm::vec3(1.0, 0.0, 0.0),
-            normal: glm::vec3(0.0, 0.0, 0.0),
+            position: [0.0, 0.5, 0.0].into(),
+            color: [1.0, 0.0, 0.0].into(),
+            normal: [0.0, 0.0, 0.0].into(),
         },
         Vertex {
-            position: glm::vec3(0.5, 0.5, 0.0),
-            color: glm::vec3(0.0, 0.0, 1.0),
-            normal: glm::vec3(0.0, 0.0, 0.0),
+            position: [-0.5, -0.5, 0.0].into(),
+            color: [0.0, 1.0, 0.0].into(),
+            normal: [0.0, 0.0, 0.0].into(),
         },
         Vertex {
-            position: glm::vec3(-0.5, -0.5, 0.0),
-            color: glm::vec3(0.0, 1.0, 0.0),
-            normal: glm::vec3(0.0, 0.0, 0.0),
-        },
-        Vertex {
-            position: glm::vec3(0.5, -0.5, 0.0),
-            color: glm::vec3(0.0, 0.0, 1.0),
-            normal: glm::vec3(0.0, 0.0, 0.0),
+            position: [0.5, -0.5, 0.0].into(),
+            color: [0.0, 0.0, 1.0].into(),
+            normal: [0.0, 0.0, 0.0].into(),
         },
     ]
 }
 
-fn indices() -> Vec<u16> {vec![
-    1, 2, 3,
-    2, 1, 0,
-]}
-
-
-
-pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
+pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>, vertices: Vec<Vertex>) {
     // Create buffer
-    let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(verts());
-    let index_buffer: wgpu::Buffer = program.create_index_buffer(indices());
+    let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(vertices);
 
     program.preloop(&mut |_| {
         println!("Called one time before the loop!");
@@ -88,8 +80,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                         let pipeline = p.pipeline();
                         render_pass.set_pipeline(pipeline);
                         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                        render_pass.draw_indexed(0..p.n_indices(), 0, 0..1);
+                        render_pass.draw(0..p.n_vert(), 0..1);
                     }
 
                     // submit will accept anything that implements IntoIter
@@ -97,9 +88,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                     output.present();
                 });
             }
-            Event::MainEventsCleared => {
-                program.window.request_redraw()
-            }
+            Event::MainEventsCleared => program.window.request_redraw(),
 
             Event::WindowEvent {
                 ref event,
@@ -122,7 +111,16 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     });
 }
 
-pub fn enter_program() {
+// #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
+fn enter_program() {
+
+    // let vert_string = include_str!("../../shaders/vert.glsl");
+    // let frag_string = include_str!("../../shaders/frag.glsl");
+    let shader_string = include_str!("../shaders/vert.wgsl");
+
+    let event_loop = winit::event_loop::EventLoop::new();
+    let mut program = WGPUGraphics::new(400, 400, &event_loop);
+
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -131,20 +129,35 @@ pub fn enter_program() {
             env_logger::init();
         }
     }
-    // let vert_string = include_str!("../../shaders/vert.glsl");
-    // let frag_string = include_str!("../../shaders/frag.glsl");
-    let shader_string = include_str!("../../shaders/vert.wgsl");
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Winit prevents sizing with CSS, so we have to set
+        // the size manually when on web.
+        use winit::dpi::PhysicalSize;
+        program.window.set_inner_size(PhysicalSize::new(450, 400));
 
-    // let mut sim = physics::ParticleSim::new();
-    // sim.setup("");
-
-    let event_loop = winit::event_loop::EventLoop::new();
-    let mut program = WGPUGraphics::new(800, 800, &event_loop);
+        use winit::platform::web::WindowExtWebSys;
+        web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| {
+                let dst = doc.get_element_by_id("wasm-example")?;
+                let canvas = web_sys::Element::from(program.window.canvas());
+                dst.append_child(&canvas).ok()?;
+                Some(())
+            })
+            .expect("Couldn't append canvas to document body.");
+    }
 
     // Create pipeline from vertex, fragment shaders
     unsafe {
         program.create_shader_program(shader_string);
     }
-    program.get_backend_info();
-    run_loop(program, event_loop);
+    let vertices = vertex_specification();
+    // program.get_backend_info();
+    run_loop(program, event_loop, vertices);
+}
+
+#[cfg_attr(target_arch="wasm32", wasm_bindgen(main))]
+pub fn main() {
+    enter_program()
 }

@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))] {
 use crate::opengl_program::GLGraphics;
 use crate::physics;
 unsafe fn vertex_specification(program: &mut GLGraphics) {
@@ -112,4 +113,5 @@ pub fn enter_program() {
 
     // program.get_backend_info();
     run_loop(program);
+}
 }

@@ -1,5 +1,9 @@
+
+#[cfg(not(target_arch = "wasm32"))] {
 use crate::graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram};
 use crate::util::print_type_of;
+extern crate gl;
+extern crate sdl2;
 use gl::types::*;
 use sdl2::video::GLContext;
 use sdl2::video::{GLProfile, Window};
@@ -196,4 +200,5 @@ impl GraphicsProgram for GLGraphics {
             sdl2::log::log("OpenGL not Initialized!");
         }
     }
+}
 }

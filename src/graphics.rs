@@ -1,10 +1,5 @@
-extern crate gl;
-extern crate sdl2;
 use std::collections::HashMap;
-
-pub struct Triangle {
-    pub vertices: [Vertex;3]
-}
+use std::cell::RefCell;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]

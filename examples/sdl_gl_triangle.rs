@@ -1,5 +1,7 @@
-use crate::graphics::GraphicsProgram;
-use crate::opengl_program::GLGraphics;
+#[cfg(not(target_arch = "wasm32"))] {
+use physics_engine::graphics::GraphicsProgram;
+use physics_engine::opengl_program::GLGraphics;
+use nalgebra_glm as glm;
 
 unsafe fn vertex_specification(program: &mut GLGraphics) {
     use std::ffi::c_void;
@@ -103,8 +105,8 @@ pub fn run_loop(mut program: GLGraphics) {
     }
 }
 pub fn enter_program() {
-    let vert_string = include_str!("../../shaders/vert.glsl");
-    let frag_string = include_str!("../../shaders/frag.glsl");
+    let vert_string = include_str!("../shaders/vert.glsl");
+    let frag_string = include_str!("../shaders/frag.glsl");
     // let mut sim = physics::ParticleSim::new();
     // sim.setup("");
     let mut program = GLGraphics::new(600, 600);
@@ -121,4 +123,8 @@ pub fn enter_program() {
 
     // program.get_backend_info();
     run_loop(program);
+}
+fn main() {
+    enter_program()
+}
 }
