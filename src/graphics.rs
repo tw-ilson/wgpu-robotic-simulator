@@ -9,6 +9,11 @@ pub struct Vertex {
     pub color: glm::Vec3,
     pub normal: glm::Vec3,
 }
+impl From<glm::Vec3> for Vertex {
+    fn from(position:glm::Vec3) -> Self {
+        Self { position, color: glm::vec3(0.,0.,0.), normal: glm::vec3(0., 0., 0.) }
+    }
+}
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
 
