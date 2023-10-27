@@ -59,16 +59,14 @@ impl From<String> for Mesh {
 
 #[derive(Debug, Clone)]
 pub struct Polyhedron {
-    verts: Vec<Vertex>,
-    edges: Vec<(u16,u16)>
+    pub verts: Vec<Vertex>,
+    // edges: Vec<(u16,u16)>
+    pub indices: Vec<u16>,
 }
 impl Polyhedron {
-    fn verts(&self) -> &Vec<Vertex> {
-        &self.verts
-    }
-    fn edges(&self) -> &Vec<Vertex> {
-        &self.verts
-    }
+    // fn edges(&self) -> &Vec<Vertex> {
+    //     &self.verts
+    // }
     fn check() {
         unimplemented!()
     }
@@ -80,24 +78,25 @@ impl From<Mesh> for Polyhedron {
             .flat_map(|tri| tri.vertices.iter().cloned())
             .dedup()
             .collect_vec();
-        let edge_set: HashSet<(u16, u16)> = mesh.faces
+        let indices: Vec<u16> = mesh.faces
             .iter()
             .flat_map(|tri| {
-                let mut edges:Vec<(u16, u16)> = Vec::new();
+                let mut indices:Vec<u16> = Vec::new();
                 for i in 0..3 {
                     let idx1 = verts.iter().position(|&v_b| v_b == tri.vertices[i]).unwrap();
-                    let idx2 = verts.iter().position(|&v_b| v_b == tri.vertices[(i+1)%3]).unwrap();
-                    edges.push(if idx1 < idx2 {
-                        (idx1 as u16, idx2 as u16)
-                    } else {
-                        (idx2 as u16, idx1 as u16)
-                    });
+                    indices.push(idx1 as u16);
+                    // let idx2 = verts.iter().position(|&v_b| v_b == tri.vertices[(i+1)%3]).unwrap();
+                    // edges.push(if idx1 < idx2 {
+                    //     (idx1 as u16, idx2 as u16)
+                    // } else {
+                    //     (idx2 as u16, idx1 as u16)
+                    // });
                 };
-                edges
+                indices
             }).collect();
-        let edges: Vec<(u16, u16)> = edge_set.into_iter().collect();
+        // let edges: Vec<(u16, u16)> = edge_set.into_iter().collect();
        // get the correct set of edges
-       Self { verts, edges }
+       Self { verts, indices }
     }
 }
 // impl Into<Vec<Triangle>> for Polyhedron {

@@ -20,8 +20,8 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     let poly = Polyhedron::from(mesh);
 
     // Create buffers
-    let vertex_buffer = program.create_vertex_buffer(poly.);
-    let index_buffer = program.create_index_buffer(indices());
+    let vertex_buffer = program.create_vertex_buffer(poly.verts);
+    let index_buffer = program.create_index_buffer(poly.indices);
     let camera_buffer = program.create_camera_buffer(&mut camera_uniform);
 
     program.preloop(&mut |_| {
@@ -117,5 +117,8 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     });
 }
 fn main() {
-    println!("{:#?}", m);
+    let event_loop = winit::event_loop::EventLoop::new();
+    let program = WGPUGraphics::new(800, 800, &event_loop);
+
+    run_loop(program, event_loop);
 }
