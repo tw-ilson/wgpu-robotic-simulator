@@ -1,12 +1,12 @@
 use crate::{
-    camera::{Camera, CameraUniform},
+    camera::{Camera, CameraController, CameraUniform},
     graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram, Vertex},
 };
 use bytemuck::{cast_slice, Pod, Zeroable};
 use std::collections::HashMap;
 use std::slice;
 use wgpu::{util::DeviceExt, Device, Surface};
-use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::Window};
+use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::{Window, WindowBuilder}};
 
 fn retrieve_adapter_device(
     instance: &wgpu::Instance,
@@ -67,9 +67,10 @@ pub struct WGPUState {
     surface: wgpu::Surface,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    camera: Option<Camera>,
-    bind_layouts: Vec<wgpu::BindGroupLayout>, // [camera]
+    camera: Camera,
+    camera_controller: CameraController,
     camera_bind_group: Option<wgpu::BindGroup>,
+    bind_layouts: Vec<wgpu::BindGroupLayout>, // [camera]
     render_pipeline: Option<wgpu::RenderPipeline>,
     num_vertices: Option<u32>,
     num_indices: Option<u32>,
@@ -112,15 +113,14 @@ impl WGPUGraphics {
         self.backend.num_indices.unwrap_or(0)
     }
     pub fn camera(&mut self) -> &mut Camera {
-        match &mut self.backend.camera {
-            Some(cam) => cam,
-            None => panic!("No camera"),
-        }
+        &mut self.backend.camera 
+    }
+    pub fn camera_controller(&mut self) -> &mut CameraController {
+        &mut self.backend.camera_controller
     }
     pub fn camera_bind_group(&self) -> &wgpu::BindGroup {
-        &self.backend.camera_bind_group.as_ref().expect("No Camera")
+        &self.backend.camera_bind_group.as_ref().expect("camera uniform not yet assigned!")
     }
-
     // create shader pipeline
     pub unsafe fn create_shader_program(&mut self, shader_source: &str) {
         fn compile_shader(
@@ -233,7 +233,6 @@ impl WGPUGraphics {
         )
     }
     pub fn initialize_camera(&mut self) -> CameraUniform {
-        self.backend.camera = Some(Camera::new(self.width, self.height));
         let mut camera_uniform = CameraUniform::new();
         let camera_bind_group_layout =
             self.device()
@@ -251,11 +250,18 @@ impl WGPUGraphics {
                     label: Some("camera_bind_group_layout"),
                 });
         self.backend.bind_layouts.push(camera_bind_group_layout);
-        camera_uniform.update_view_proj(self.camera());
+        camera_uniform.update_view_proj(&self.backend.camera);
         camera_uniform
     }
+    pub fn update_camera(&mut self) {
+        self.backend.camera_controller.update(&mut self.backend.camera);
+    }
+    pub fn mouse_look(&mut self, mouseX: f32, mouseY: f32) {
+        self.backend.camera_controller.mouse_look(
+            &mut self.backend.camera, mouseX, mouseY)
+    }
     pub fn create_camera_buffer(&mut self, camera_uniform: &mut CameraUniform) -> wgpu::Buffer {
-        camera_uniform.update_view_proj(self.camera());
+        camera_uniform.update_view_proj(&self.backend.camera);
         let camera_buffer = self.create_buffer(
             "Camera Buffer",
             &[*camera_uniform],
@@ -276,11 +282,35 @@ impl WGPUGraphics {
 
     //constructor
     pub fn new(width: u32, height: u32, event: &EventLoop<()>) -> Self {
-        let window = Window::new(event).expect("unable to create winit window");
+        // let window = Window::new(event).expect("unable to create winit window");
+        let window = WindowBuilder::new().build(event).expect("unable to create winit window");
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Winit prevents sizing with CSS, so we have to set
+            // the size manually when on web.
+            // use winit::dpi::PhysicalSize;
+            // program.window.set_inner_size(PhysicalSize::new(width, height));
+
+            use winit::platform::web::WindowExtWebSys;
+            web_sys::window()
+                .and_then(|win| win.document())
+                .and_then(|doc| {
+                    let dst = doc.get_element_by_id("wasm-example")?;
+                    let canvas = web_sys::Element::from(window.canvas());
+                    dst.append_child(&canvas).ok()?;
+                    Some(())
+                })
+                .expect("Couldn't append canvas to document body.");
+        }
 
         let size = PhysicalSize::new(width, height);
         window.set_inner_size(size);
-        let instance = wgpu::Instance::default();
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN,
+            flags: wgpu::InstanceFlags::default(),
+            dx12_shader_compiler: Default::default(),
+            gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
+        });
         let surface =
             unsafe { instance.create_surface(&window) }.expect("unable to create surface");
         let (adapter, device, queue) = retrieve_adapter_device(&instance, &window);
@@ -292,6 +322,7 @@ impl WGPUGraphics {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(swapchain_capabilities.formats[0]);
+        
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
@@ -301,6 +332,7 @@ impl WGPUGraphics {
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
         };
+        surface.configure(&device, &config);
 
         let mut program = Self {
             attr_map: HashMap::new(),
@@ -316,7 +348,8 @@ impl WGPUGraphics {
                 queue,
                 size,
                 config,
-                camera: None,
+                camera: Camera::new(width, height),
+                camera_controller: CameraController::default(),
                 bind_layouts: Vec::new(),
                 camera_bind_group:None,
                 render_pipeline: None,
@@ -343,7 +376,6 @@ impl GraphicsProgram for WGPUGraphics {
     fn swap_window(&self) {}
     fn get_backend_info(&self) {}
     fn default_state(&mut self) {
-        // let surface = self.surface();
         self.backend.surface.configure(self.device(), self.config());
     }
 }

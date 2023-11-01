@@ -64,8 +64,16 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                 ref event,
                 window_id,
             } if window_id == program.window.id() => {
-                if program.camera().process_events(event) {
+                if program.camera_controller().process_keyboard(event) {
                     match event {
+                        // WindowEvent::KeyboardInput { 
+                        //      input: KeyboardInput{
+                        //          state: ElementState::Pressed,
+                        //          virtual_keycode: VirtualKeyCode::Key1,
+                        //          ..
+                        //      },
+                        //     ..
+                        // } => // change the pipeline to wireframe mode
                         WindowEvent::CloseRequested
                         | WindowEvent::KeyboardInput {
                             input:
@@ -80,10 +88,16 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                     }
                 }
             }
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion{ delta, },
+                .. // We're not using device_id currently
+            } =>  {
+                program.mouse_look(delta.0 as f32, delta.1 as f32)
+            }
             Event::RedrawRequested(window_id) if window_id == program.window.id() => {
                 //UPDATE
                 program.update(&mut |p| {
-                    p.camera().update();
+                    p.update_camera();
                     camera_uniform.update_view_proj(p.camera());
                     p.queue().write_buffer(
                         &camera_buffer,
@@ -122,16 +136,17 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                                             b: 0.3,
                                             a: 1.0,
                                         }),
-                                        store: true,
+                                        store: wgpu::StoreOp::Store,
                                     },
                                 })],
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
                                 depth_stencil_attachment: None,
                             });
                         render_pass.set_pipeline(p.pipeline());
                         render_pass.set_bind_group(0, p.camera_bind_group(), &[]);
                         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        render_pass
-                            .set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                         render_pass.draw_indexed(0..p.n_indices(), 0, 0..1);
                     }
 
@@ -149,7 +164,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
 pub fn enter_program() {
     let event_loop = winit::event_loop::EventLoop::new();
-    let program = WGPUGraphics::new(800, 800, &event_loop);
+    let program = WGPUGraphics::new(600, 600, &event_loop);
 
     run_loop(program, event_loop);
 }

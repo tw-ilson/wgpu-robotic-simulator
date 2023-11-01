@@ -5,11 +5,15 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "prog"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytemuck = "1.14.0"
 cfg-if = "1.0.0"
+bytemuck = "1.14.0"
 env_logger = "0.10.0"
 futures = "0.3.28"
 itertools = "0.11.0"
@@ -18,20 +22,18 @@ mint = "0.5.9"
 naga = "0.13.0"
 nalgebra-glm = "0.18.0"
 rand = "0.8.5"
-wgpu = { version="0.17.1", features=["glsl"] }
+wgpu = { version="0.18.0", features=["glsl"] }
 winit = "0.28.7"
-
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 gl = "0.14.0"
 sdl2 = "0.35.2"
 
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2", features = ["js"] } 
 console_error_panic_hook = "0.1.6"
 console_log = "1.0"
-wgpu = { version = "0.17", features = ["webgl"]}
+wgpu = { version = "0.18", features = ["webgl"]}
 wasm-bindgen = "0.2"
-wasm-bindgen-test = "0.2"
 wasm-bindgen-futures = "0.4.30"
 web-sys = { version = "0.3", features = [
     "Document",

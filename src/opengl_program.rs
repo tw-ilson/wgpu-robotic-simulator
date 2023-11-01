@@ -1,5 +1,4 @@
 
-#[cfg(not(target_arch = "wasm32"))] {
 use crate::graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram};
 use crate::util::print_type_of;
 extern crate gl;
@@ -19,70 +18,7 @@ pub struct SDLContext {
 
 pub type GLGraphics = GraphicsContext<SDLContext, Window, GLuint>;
 impl GLGraphics {
-    pub fn sdl(&self) -> &Sdl {
-        &self.backend.sdl_context
-    }
-    pub fn gl(&self) -> &GLContext {
-        &self.backend.gl_context
-    }
-    pub fn new(width: u32, height: u32) -> Self {
-        let sdl_context = match sdl2::init() {
-            Ok(sdl) => sdl,
-            Err(e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
-        };
-        let video_subsystem = Box::new(match sdl_context.video() {
-            Ok(video_subsystem) => video_subsystem,
-            Err(e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
-        });
-        let attrs = video_subsystem.gl_attr();
-        attrs.set_context_major_version(4);
-        attrs.set_context_minor_version(1);
-        attrs.set_context_minor_version(1);
-        attrs.set_context_profile(GLProfile::Core);
-        attrs.set_double_buffer(true);
-        attrs.set_depth_size(24);
-        let window = match video_subsystem
-            .window("physics-engine", width, height)
-            .opengl()
-            .build()
-        {
-            Ok(window) => window,
-            Err(e) => panic!("Failed to initialize SDL! {}\n{}", e, sdl2::get_error()),
-        };
-        let gl_context = match window.gl_create_context() {
-            Ok(opengl_context) => {
-                //Initialize function pointers to opengl
-                gl::load_with(|s| video_subsystem.gl_get_proc_address(s).cast());
-                opengl_context
-            }
-            Err(e) => panic!("Failed to initialize OpenGL!{}\n{}", e, sdl2::get_error()),
-        };
-        Self {
-            attr_map: HashMap::new(),
-            width,
-            height,
-            window,
-            // event,
-            backend: SDLContext {
-                sdl_context,
-                gl_context,
-            },
-            flags: ContextFlags {
-                quit_loop: false,
-                sdl_initialized: true,
-                backend_initialized: true,
-            },
-            bg_color: Color {
-                r: 0.2,
-                b: 0.2,
-                g: 0.2,
-                a: 0.2,
-            },
-        }
-    }
-}
-impl GraphicsProgram for GLGraphics {
-    unsafe fn create_shader_program(
+    pub unsafe fn create_shader_program(
         &mut self,
         vertex_shader_source: &str,
         frag_shader_source: &str,
@@ -149,6 +85,69 @@ impl GraphicsProgram for GLGraphics {
 
         self.attr_map.insert("PIPELINE".to_string(), program);
     }
+    pub fn sdl(&self) -> &Sdl {
+        &self.backend.sdl_context
+    }
+    pub fn gl(&self) -> &GLContext {
+        &self.backend.gl_context
+    }
+    pub fn new(width: u32, height: u32) -> Self {
+        let sdl_context = match sdl2::init() {
+            Ok(sdl) => sdl,
+            Err(e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
+        };
+        let video_subsystem = Box::new(match sdl_context.video() {
+            Ok(video_subsystem) => video_subsystem,
+            Err(e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
+        });
+        let attrs = video_subsystem.gl_attr();
+        attrs.set_context_major_version(4);
+        attrs.set_context_minor_version(1);
+        attrs.set_context_minor_version(1);
+        attrs.set_context_profile(GLProfile::Core);
+        attrs.set_double_buffer(true);
+        attrs.set_depth_size(24);
+        let window = match video_subsystem
+            .window("physics-engine", width, height)
+            .opengl()
+            .build()
+        {
+            Ok(window) => window,
+            Err(e) => panic!("Failed to initialize SDL! {}\n{}", e, sdl2::get_error()),
+        };
+        let gl_context = match window.gl_create_context() {
+            Ok(opengl_context) => {
+                //Initialize function pointers to opengl
+                gl::load_with(|s| video_subsystem.gl_get_proc_address(s).cast());
+                opengl_context
+            }
+            Err(e) => panic!("Failed to initialize OpenGL!{}\n{}", e, sdl2::get_error()),
+        };
+        Self {
+            attr_map: HashMap::new(),
+            width,
+            height,
+            window,
+            // event,
+            backend: SDLContext {
+                sdl_context,
+                gl_context,
+            },
+            flags: ContextFlags {
+                quit_loop: false,
+                sdl_initialized: true,
+                backend_initialized: true,
+            },
+            bg_color: Color {
+                r: 0.2,
+                b: 0.2,
+                g: 0.2,
+                a: 0.2,
+            },
+        }
+    }
+}
+impl GraphicsProgram for GLGraphics {
     fn swap_window(&self) {
         self.window.gl_swap_window();
     }
@@ -200,5 +199,4 @@ impl GraphicsProgram for GLGraphics {
             sdl2::log::log("OpenGL not Initialized!");
         }
     }
-}
 }

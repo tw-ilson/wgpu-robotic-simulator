@@ -1,4 +1,3 @@
-#[cfg(not(target_arch = "wasm32"))] {
 use physics_engine::graphics::GraphicsProgram;
 use physics_engine::opengl_program::GLGraphics;
 use nalgebra_glm as glm;
@@ -126,5 +125,4 @@ pub fn enter_program() {
 }
 fn main() {
     enter_program()
-}
 }
