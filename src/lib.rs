@@ -139,6 +139,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                         render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                         render_pass.draw_indexed(0..p.n_indices(), 0, 0..1);
                     }
+                    println!("here");
 
                     // submit will accept anything that implements IntoIter
                     p.queue().submit(std::iter::once(encoder.finish()));
@@ -182,7 +183,5 @@ pub fn enter_program() {
     let event_loop = winit::event_loop::EventLoop::new();
     let program = WGPUGraphics::new(450, 400, &event_loop);
 
-    // Create pipeline from vertex, fragment shaders
-    // program.get_backend_info();
     run_loop(program, event_loop);
 }

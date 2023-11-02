@@ -6,7 +6,7 @@ use bytemuck::{cast_slice, Pod, Zeroable};
 use std::collections::HashMap;
 use std::slice;
 use wgpu::{util::DeviceExt, Device, Surface};
-use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::{Window, WindowBuilder}};
+use winit::{dpi::PhysicalSize, event_loop::{EventLoop, }, event::WindowEvent, window::{Window, WindowBuilder}};
 
 fn retrieve_adapter_device(
     instance: &wgpu::Instance,
@@ -256,9 +256,12 @@ impl WGPUGraphics {
     pub fn update_camera(&mut self) {
         self.backend.camera_controller.update(&mut self.backend.camera);
     }
-    pub fn mouse_look(&mut self, mouseX: f32, mouseY: f32) {
+    pub fn process_keyboard(&mut self, event: &WindowEvent) -> bool{
+        self.backend.camera_controller.process_keyboard(event)
+    }
+    pub fn mouse_look(&mut self, mouse_x: f32, mouse_y: f32) {
         self.backend.camera_controller.mouse_look(
-            &mut self.backend.camera, mouseX, mouseY)
+            &mut self.backend.camera, mouse_x, mouse_y)
     }
     pub fn create_camera_buffer(&mut self, camera_uniform: &mut CameraUniform) -> wgpu::Buffer {
         camera_uniform.update_view_proj(&self.backend.camera);
@@ -284,6 +287,8 @@ impl WGPUGraphics {
     pub fn new(width: u32, height: u32, event: &EventLoop<()>) -> Self {
         // let window = Window::new(event).expect("unable to create winit window");
         let window = WindowBuilder::new().build(event).expect("unable to create winit window");
+        window.set_cursor_grab(winit::window::CursorGrabMode::Confined).unwrap();
+        window.set_cursor_visible(false);
         #[cfg(target_arch = "wasm32")]
         {
             // Winit prevents sizing with CSS, so we have to set
@@ -306,7 +311,7 @@ impl WGPUGraphics {
         let size = PhysicalSize::new(width, height);
         window.set_inner_size(size);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
+            backends: wgpu::Backends::PRIMARY,
             flags: wgpu::InstanceFlags::default(),
             dx12_shader_compiler: Default::default(),
             gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
@@ -374,7 +379,9 @@ impl WGPUGraphics {
 }
 impl GraphicsProgram for WGPUGraphics {
     fn swap_window(&self) {}
-    fn get_backend_info(&self) {}
+    fn get_backend_info(&self) {
+
+    }
     fn default_state(&mut self) {
         self.backend.surface.configure(self.device(), self.config());
     }

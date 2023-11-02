@@ -71,7 +71,7 @@ impl CameraController {
                 state,
                 ..
             } => {
-                self.mouse_pressed = *state == ElementState::Pressed;
+                // self.mouse_pressed = *state == ElementState::Pressed;
                 true
             }
             WindowEvent::KeyboardInput {
@@ -110,7 +110,8 @@ impl CameraController {
     pub fn mouse_look(&mut self, cam: &mut Camera, mouse_x: f32, mouse_y: f32) {
         let new_mouse_posn: glm::Vec2 = glm::vec2(mouse_x, mouse_y);
         let delta: glm::Vec2 = self.old_mouse_posn - new_mouse_posn;
-        cam.view_direction = glm::rotate_vec3(&cam.view_direction, delta.x, &cam.up_vector);
+        let sensitivity = 0.1;
+        cam.view_direction = glm::rotate_vec3(&cam.view_direction, delta.x * sensitivity, &cam.up_vector);
         self.old_mouse_posn = new_mouse_posn
     }
     pub fn update(&mut self, cam:&mut Camera) {

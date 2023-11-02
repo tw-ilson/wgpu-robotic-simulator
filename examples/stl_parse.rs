@@ -16,7 +16,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
     program.get_backend_info();
 
-    let mesh = Mesh::from(String::from(include_str!("../assets/bottle.stl")));
+    let mesh = Mesh::from(String::from(include_str!("../assets/humanoid_tri.stl")));
     let poly = Polyhedron::from(mesh);
 
     // Create buffers
@@ -28,32 +28,32 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
         println!("Called one time before the loop!");
     });
     event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Poll;
         match event {
             // INPUT
             Event::WindowEvent {
                 ref event,
                 window_id,
             } if window_id == program.window.id() => {
-                if program.camera().process_events(event) {
+                if program.process_keyboard(event) {
                     match event {
                         WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    state: ElementState::Pressed,
-                                    virtual_keycode: Some(VirtualKeyCode::Escape | VirtualKeyCode::Q),
-                                    ..
-                                },
-                            ..
-                        } => *control_flow = ControlFlow::Exit,
+                         => *control_flow = ControlFlow::Exit,
+                        WindowEvent::KeyboardInput { input, .. } => {
+                            match input.virtual_keycode {
+                                Some(VirtualKeyCode::Escape) => *control_flow = ControlFlow::Exit,
+                                Some(VirtualKeyCode::Q) => *control_flow = ControlFlow::Exit,
+                                _ => {}
+                            }
+                        }
                         _ => {}
                     }
                 }
-            }
+            },
             Event::RedrawRequested(window_id) if window_id == program.window.id() => {
                 //UPDATE
                 program.update(&mut |p| {
-                    p.camera().update();
+                    p.update_camera();
                     camera_uniform.update_view_proj(p.camera());
                     p.queue().write_buffer(
                         &camera_buffer,
@@ -92,10 +92,12 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                                             b: 0.3,
                                             a: 1.0,
                                         }),
-                                        store: true,
+                                        store: wgpu::StoreOp::Store,
                                     },
                                 })],
                                 depth_stencil_attachment: None,
+                                occlusion_query_set: None,
+                                timestamp_writes: None,
                             });
                         render_pass.set_pipeline(p.pipeline());
                         render_pass.set_bind_group(0, p.camera_bind_group(), &[]);
