@@ -1,5 +1,6 @@
 use crate::{
     camera::{Camera, CameraController, CameraUniform},
+    light::LightUniform,
     graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram, Vertex},
 };
 use bytemuck::{cast_slice, Pod, Zeroable};
@@ -58,7 +59,11 @@ impl Vertex {
         }
     }
 }
-
+// [camera, light] 
+struct Uniforms {
+    bind_groups: Vec<wgpu::BindGroup>,
+    bind_layouts: Vec<wgpu::BindGroupLayout>,
+}
 pub struct WGPUState {
     size: winit::dpi::PhysicalSize<u32>,
     instance: wgpu::Instance,
@@ -69,8 +74,7 @@ pub struct WGPUState {
     config: wgpu::SurfaceConfiguration,
     camera: Camera,
     camera_controller: CameraController,
-    camera_bind_group: Option<wgpu::BindGroup>,
-    bind_layouts: Vec<wgpu::BindGroupLayout>, // [camera]
+    uniforms: Uniforms, 
     render_pipeline: Option<wgpu::RenderPipeline>,
     num_vertices: Option<u32>,
     num_indices: Option<u32>,
@@ -119,7 +123,8 @@ impl WGPUGraphics {
         &mut self.backend.camera_controller
     }
     pub fn camera_bind_group(&self) -> &wgpu::BindGroup {
-        &self.backend.camera_bind_group.as_ref().expect("camera uniform not yet assigned!")
+        // &self.backend.camera_bind_group.as_ref().expect("camera uniform not yet assigned!")
+        &self.backend.uniforms.bind_groups[0]
     }
     // create shader pipeline
     pub unsafe fn create_shader_program(&mut self, shader_source: &str) {
@@ -142,13 +147,13 @@ impl WGPUGraphics {
             // })
         }
         let shader_module = compile_shader(shader_source, self.device(), None);
-        let layout: &[&wgpu::BindGroupLayout] = &self.backend.bind_layouts.iter().collect::<Vec<&wgpu::BindGroupLayout>>().into_boxed_slice();
+        let layouts: Vec<&wgpu::BindGroupLayout> = self.backend.uniforms.bind_layouts.iter().collect();
         let pipeline_layout =
             self.backend
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
-                    bind_group_layouts: layout,
+                    bind_group_layouts: &layouts.as_slice(),
                     push_constant_ranges: &[],
                 });
         let render_pipeline =
@@ -234,22 +239,6 @@ impl WGPUGraphics {
     }
     pub fn initialize_camera(&mut self) -> CameraUniform {
         let mut camera_uniform = CameraUniform::new();
-        let camera_bind_group_layout =
-            self.device()
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
-                    label: Some("camera_bind_group_layout"),
-                });
-        self.backend.bind_layouts.push(camera_bind_group_layout);
         camera_uniform.update_view_proj(&self.backend.camera);
         camera_uniform
     }
@@ -271,23 +260,41 @@ impl WGPUGraphics {
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         );
         let camera_bind_group = self.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &self.backend.bind_layouts[0],
+            layout: &self.backend.uniforms.bind_layouts[0],
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: camera_buffer.as_entire_binding(),
             }],
             label: Some("camera_bind_group"),
         });
-        self.backend.camera_bind_group = Some(camera_bind_group);
-
+        self.backend.uniforms.bind_groups.push(camera_bind_group);
         camera_buffer
+    }
+
+    //Lights
+    pub fn initialize_lights(&mut self) -> LightUniform {
+        unimplemented!();
+        // LightUniform::new()
+    }
+
+    pub fn create_light_buffer(&mut self, light_uniform: &mut LightUniform) -> wgpu::Buffer {
+        unimplemented!();
+        // let light_buffer = self.create_buffer("Light VB" , &[*light_uniform], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+        // let light_bind_group = self.backend.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //     layout: &self.backend.uniforms.bind_layouts[1],
+        //     entries: &[wgpu::BindGroupEntry {
+        //         binding: 0,
+        //         resource: light_buffer.as_entire_binding(),
+        //     }],
+        //     label: None,
+        // });
     }
 
     //constructor
     pub fn new(width: u32, height: u32, event: &EventLoop<()>) -> Self {
         // let window = Window::new(event).expect("unable to create winit window");
         let window = WindowBuilder::new().build(event).expect("unable to create winit window");
-        window.set_cursor_grab(winit::window::CursorGrabMode::Confined).unwrap();
+        window.set_cursor_grab(winit::window::CursorGrabMode::Locked).unwrap();
         window.set_cursor_visible(false);
         #[cfg(target_arch = "wasm32")]
         {
@@ -339,6 +346,36 @@ impl WGPUGraphics {
         };
         surface.configure(&device, &config);
 
+        // can abstract this stuff better
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                    label: Some("camera_bind_group_layout"),
+                });
+        // let light_bind_group_layout = 
+        // device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        //     entries: &[wgpu::BindGroupLayoutEntry {
+        //         binding: 0,
+        //         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+        //         ty: wgpu::BindingType::Buffer {
+        //             ty: wgpu::BufferBindingType::Uniform,
+        //             has_dynamic_offset: false,
+        //             min_binding_size: None,
+        //         },
+        //         count: None,
+        //     }],
+        //     label: Some("light_bind_group_layout"),
+        // });
+
         let mut program = Self {
             attr_map: HashMap::new(),
             width,
@@ -355,8 +392,10 @@ impl WGPUGraphics {
                 config,
                 camera: Camera::new(width, height),
                 camera_controller: CameraController::default(),
-                bind_layouts: Vec::new(),
-                camera_bind_group:None,
+                uniforms: Uniforms {
+                    bind_layouts: vec![camera_bind_group_layout,],
+                    bind_groups: Vec::new(),
+                },
                 render_pipeline: None,
                 num_vertices: None,
                 num_indices: None,

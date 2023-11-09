@@ -41,7 +41,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                          => *control_flow = ControlFlow::Exit,
                         WindowEvent::KeyboardInput { input, .. } => {
                             match input.virtual_keycode {
-                                Some(VirtualKeyCode::Escape) => *control_flow = ControlFlow::Exit,
+                                Some(VirtualKeyCode::Escape) => if input.state == ElementState::Pressed {*control_flow = ControlFlow::Exit},
                                 Some(VirtualKeyCode::Q) => *control_flow = ControlFlow::Exit,
                                 _ => {}
                             }
@@ -49,6 +49,12 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                         _ => {}
                     }
                 }
+            },
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion{ delta, },
+                .. // We're not using device_id currently
+            } =>  {
+                program.mouse_look(delta.0 as f32, delta.1 as f32)
             },
             Event::RedrawRequested(window_id) if window_id == program.window.id() => {
                 //UPDATE

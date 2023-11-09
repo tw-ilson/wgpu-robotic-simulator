@@ -107,12 +107,18 @@ impl CameraController {
             _ => false,
         }
     }
-    pub fn mouse_look(&mut self, cam: &mut Camera, mouse_x: f32, mouse_y: f32) {
-        let new_mouse_posn: glm::Vec2 = glm::vec2(mouse_x, mouse_y);
-        let delta: glm::Vec2 = self.old_mouse_posn - new_mouse_posn;
+    pub fn mouse_look(&mut self, cam: &mut Camera, delta_x: f32, delta_y: f32) {
+        // let new_mouse_posn: glm::Vec2 = glm::vec2(mouse_x, mouse_y);
+        // let delta: glm::Vec2 = self.old_mouse_posn - new_mouse_posn;
         let sensitivity = 0.1;
-        cam.view_direction = glm::rotate_vec3(&cam.view_direction, delta.x * sensitivity, &cam.up_vector);
-        self.old_mouse_posn = new_mouse_posn
+        let right_vec = glm::vec3(
+                cam.view_direction.z,
+                cam.view_direction.y,
+                -cam.view_direction.x,
+            );
+        cam.view_direction = glm::rotate_vec3(&cam.view_direction, -delta_x * sensitivity, &cam.up_vector);
+        cam.view_direction = glm::rotate_vec3(&cam.view_direction, delta_y * sensitivity, &right_vec);
+        // self.old_mouse_posn = new_mouse_posn
     }
     pub fn update(&mut self, cam:&mut Camera) {
         if self.input_state[0] {
