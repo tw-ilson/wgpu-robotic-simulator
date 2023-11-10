@@ -49,7 +49,7 @@ impl Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 3] =
         wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3];
 
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
 
         wgpu::VertexBufferLayout {
@@ -71,13 +71,13 @@ pub struct WGPUState {
     device: wgpu::Device,
     surface: wgpu::Surface,
     queue: wgpu::Queue,
+    // pipeline: Option<wgpu::RenderPipeline>,
     config: wgpu::SurfaceConfiguration,
     camera: Camera,
     camera_controller: CameraController,
     uniforms: Uniforms, 
-    render_pipeline: Option<wgpu::RenderPipeline>,
-    num_vertices: Option<u32>,
-    num_indices: Option<u32>,
+    num_vertices: u32,
+    num_indices: u32,
 }
 
 pub type WGPUGraphics = GraphicsContext<WGPUState, Window, wgpu::Buffer>;
@@ -101,20 +101,20 @@ impl WGPUGraphics {
     pub fn queue(&self) -> &wgpu::Queue {
         &self.backend.queue
     }
-    pub fn pipeline(&self) -> &wgpu::RenderPipeline {
-        match &self.backend.render_pipeline {
-            Some(pipeline) => pipeline,
-            None => panic!("Accessed pipeline before creation!"),
-        }
-    }
+    // pub fn pipeline(&self) -> &wgpu::RenderPipeline {
+    //     match &self.backend.render_pipeline {
+    //         Some(pipeline) => pipeline,
+    //         None => panic!("Accessed pipeline before creation!"),
+    //     }
+    // }
     pub fn config(&self) -> &wgpu::SurfaceConfiguration {
         &self.backend.config
     }
     pub fn n_vert(&self) -> u32 {
-        self.backend.num_vertices.unwrap_or(0)
+        self.backend.num_vertices
     }
     pub fn n_indices(&self) -> u32 {
-        self.backend.num_indices.unwrap_or(0)
+        self.backend.num_indices
     }
     pub fn camera(&mut self) -> &mut Camera {
         &mut self.backend.camera 
@@ -122,87 +122,16 @@ impl WGPUGraphics {
     pub fn camera_controller(&mut self) -> &mut CameraController {
         &mut self.backend.camera_controller
     }
+    pub fn bind_layouts(&self) -> Vec<&wgpu::BindGroupLayout> {
+        self.backend.uniforms.bind_layouts.iter().collect()
+    }
     pub fn camera_bind_group(&self) -> &wgpu::BindGroup {
         // &self.backend.camera_bind_group.as_ref().expect("camera uniform not yet assigned!")
         &self.backend.uniforms.bind_groups[0]
     }
-    // create shader pipeline
-    pub unsafe fn create_shader_program(&mut self, shader_source: &str) {
-        fn compile_shader(
-            source: &str,
-            device: &Device,
-            _: Option<naga::ShaderStage>,
-        ) -> wgpu::ShaderModule {
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Shader"),
-                source: wgpu::ShaderSource::Wgsl(source.into()),
-            })
-            // device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            //     label: Some(&format!("{:?}", shader_type)),
-            //     source: wgpu::ShaderSource::Glsl {
-            //         shader: Cow::Borrowed(source),
-            //         stage: shader_type.expect("Shader type must be defined for GLSL"),
-            //         defines: naga::FastHashMap::default(),
-            //     },
-            // })
-        }
-        let shader_module = compile_shader(shader_source, self.device(), None);
-        let layouts: Vec<&wgpu::BindGroupLayout> = self.backend.uniforms.bind_layouts.iter().collect();
-        let pipeline_layout =
-            self.backend
-                .device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Render Pipeline Layout"),
-                    bind_group_layouts: &layouts.as_slice(),
-                    push_constant_ranges: &[],
-                });
-        let render_pipeline =
-            self.backend
-                .device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Render Pipeline"),
-                    layout: Some(&pipeline_layout),
-                    vertex: wgpu::VertexState {
-                        module: &shader_module,
-                        entry_point: "vs_main",
-                        buffers: &[Vertex::desc()],
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &shader_module,
-                        entry_point: "fs_main",
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: self.config().format,
-                            blend: Some(wgpu::BlendState {
-                                color: wgpu::BlendComponent::REPLACE,
-                                alpha: wgpu::BlendComponent::REPLACE,
-                            }),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        topology: wgpu::PrimitiveTopology::TriangleList,
-                        strip_index_format: None,
-                        front_face: wgpu::FrontFace::Ccw,
-                        cull_mode: Some(wgpu::Face::Back),
-                        // Setting this to anything other than Fill requires
-                        // Features::NON_FILL_POLYGON_MODE
-                        polygon_mode: wgpu::PolygonMode::Fill,
-                        // Requires Features::DEPTH_CLIP_CONTROL
-                        unclipped_depth: false,
-                        // Requires Features::CONSERVATIVE_RASTERIZATION
-                        conservative: false,
-                    },
-                    depth_stencil: None,
-                    multisample: wgpu::MultisampleState {
-                        count: 1,
-                        mask: !0,
-                        alpha_to_coverage_enabled: false,
-                    },
-                    multiview: None,
-                });
-        self.backend.render_pipeline = Some(render_pipeline);
-        // self.attr_map.insert(String::from("PIPELINE"), WGPUResource::Pipeline(render_pipeline));
-    }
+    // pub unsafe fn create_shader_program(&mut self, shader_source: &str) {
+    //     self.backend.render_pipeline = Some(render_pipeline);
+    // }
 
     // helpers to create buffers
     fn create_buffer<T: Zeroable + Pod>(
@@ -222,7 +151,7 @@ impl WGPUGraphics {
         buffer
     }
     pub fn create_vertex_buffer(&mut self, vertices: Vec<Vertex>) -> wgpu::Buffer {
-        self.backend.num_vertices = Some(vertices.len() as u32);
+        self.backend.num_vertices = vertices.len() as u32;
         self.create_buffer(
             "Vertex Buffer",
             vertices.as_slice(),
@@ -230,7 +159,7 @@ impl WGPUGraphics {
         )
     }
     pub fn create_index_buffer(&mut self, indices: Vec<u16>) -> wgpu::Buffer {
-        self.backend.num_indices = Some(indices.len() as u32);
+        self.backend.num_indices = indices.len() as u32;
         self.create_buffer(
             "Index Buffer",
             indices.as_slice(),
@@ -273,13 +202,26 @@ impl WGPUGraphics {
 
     //Lights
     pub fn initialize_lights(&mut self) -> LightUniform {
-        unimplemented!();
-        // LightUniform::new()
+        LightUniform::new()
     }
 
     pub fn create_light_buffer(&mut self, light_uniform: &mut LightUniform) -> wgpu::Buffer {
-        unimplemented!();
-        // let light_buffer = self.create_buffer("Light VB" , &[*light_uniform], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+        let light_buffer = self.create_buffer("Light VB" , &[*light_uniform], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+        let light_bind_group = self.backend.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.backend.uniforms.bind_layouts[1],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: light_buffer.as_entire_binding(),
+            }],
+            label: None,
+        });
+
+        light_buffer
+    }
+
+
+    pub fn new_bind_group(&mut self, name: &str) {
+
         // let light_bind_group = self.backend.device.create_bind_group(&wgpu::BindGroupDescriptor {
         //     layout: &self.backend.uniforms.bind_layouts[1],
         //     entries: &[wgpu::BindGroupEntry {
@@ -318,7 +260,7 @@ impl WGPUGraphics {
         let size = PhysicalSize::new(width, height);
         window.set_inner_size(size);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
+            backends: wgpu::Backends::all(),
             flags: wgpu::InstanceFlags::default(),
             dx12_shader_compiler: Default::default(),
             gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
@@ -351,7 +293,7 @@ impl WGPUGraphics {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     entries: &[wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
@@ -361,20 +303,20 @@ impl WGPUGraphics {
                     }],
                     label: Some("camera_bind_group_layout"),
                 });
-        // let light_bind_group_layout = 
-        // device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        //     entries: &[wgpu::BindGroupLayoutEntry {
-        //         binding: 0,
-        //         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-        //         ty: wgpu::BindingType::Buffer {
-        //             ty: wgpu::BufferBindingType::Uniform,
-        //             has_dynamic_offset: false,
-        //             min_binding_size: None,
-        //         },
-        //         count: None,
-        //     }],
-        //     label: Some("light_bind_group_layout"),
-        // });
+        let light_bind_group_layout = 
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("light_bind_group_layout"),
+        });
 
         let mut program = Self {
             attr_map: HashMap::new(),
@@ -396,9 +338,8 @@ impl WGPUGraphics {
                     bind_layouts: vec![camera_bind_group_layout,],
                     bind_groups: Vec::new(),
                 },
-                render_pipeline: None,
-                num_vertices: None,
-                num_indices: None,
+                num_vertices: 0,
+                num_indices: 0,
             },
             flags: ContextFlags {
                 quit_loop: false,

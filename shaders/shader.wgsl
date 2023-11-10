@@ -5,6 +5,10 @@ struct CameraUniform {
 @group(0) @binding(0) //1.
 var<uniform> camera: CameraUniform;
 
+struct Light {
+
+}
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) color: vec3<f32>,

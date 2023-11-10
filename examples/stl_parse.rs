@@ -1,6 +1,7 @@
 use physics_engine::geometry::{Mesh, Polyhedron};
 use physics_engine::wgpu_program::WGPUGraphics;
 use physics_engine::graphics::{GraphicsProgram, GraphicsContext};
+use physics_engine::shader::create_shader_program;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -9,10 +10,8 @@ use winit::{
 pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     let mut camera_uniform = program.initialize_camera();
     let shader_string = include_str!("../shaders/vert.wgsl");
-    unsafe {
-        // Create pipeline from vertex, fragment shaders
-        program.create_shader_program(shader_string);
-    }
+    // Create pipeline from vertex, fragment shaders
+    let pipeline = unsafe { create_shader_program(&program, shader_string) };
 
     program.get_backend_info();
 
@@ -105,7 +104,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                                 occlusion_query_set: None,
                                 timestamp_writes: None,
                             });
-                        render_pass.set_pipeline(p.pipeline());
+                        render_pass.set_pipeline(&pipeline);
                         render_pass.set_bind_group(0, p.camera_bind_group(), &[]);
                         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                         render_pass
@@ -126,7 +125,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 }
 fn main() {
     let event_loop = winit::event_loop::EventLoop::new();
-    let program = WGPUGraphics::new(800, 800, &event_loop);
+    let program = WGPUGraphics::new(1600, 1200, &event_loop);
 
     run_loop(program, event_loop);
 }

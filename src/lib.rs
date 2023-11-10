@@ -5,6 +5,7 @@ pub mod graphics;
 pub mod physics;
 pub mod util;
 pub mod wgpu_program;
+pub mod shader;
 extern crate nalgebra_glm as glm;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -19,6 +20,7 @@ use itertools::Itertools;
 // use std::log;
 use crate::graphics::{Vertex, GraphicsProgram};
 use crate::wgpu_program::WGPUGraphics;
+use crate::shader::create_shader_program;
 // use futures::lock::Mutex;
 use winit::{
     event::*,
@@ -83,9 +85,7 @@ fn vertex_specification() -> (Vec<Vertex>, Vec<u16>) {
 
 pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // Create buffer
-    unsafe {
-        program.create_shader_program(SHADER_STRING);
-    }
+    let pipeline = unsafe{ create_shader_program(&program, SHADER_STRING) };
 
     let (vertices, indices) = vertex_specification();
     let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(vertices);
@@ -134,8 +134,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                                 occlusion_query_set: None,
                                 timestamp_writes: None
                             });
-                        let pipeline = p.pipeline();
-                        render_pass.set_pipeline(pipeline);
+                        render_pass.set_pipeline(&pipeline);
                         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                         render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                         render_pass.draw_indexed(0..p.n_indices(), 0, 0..1);
