@@ -1,8 +1,10 @@
+#![allow(dead_code)] 
+
 pub mod camera;
 pub mod light;
 pub mod geometry;
 pub mod graphics;
-pub mod physics;
+// pub mod physics;
 pub mod util;
 pub mod wgpu_program;
 pub mod shader;
@@ -18,7 +20,7 @@ use wasm_bindgen::prelude::*;
 use itertools::Itertools;
 
 // use std::log;
-use crate::graphics::{Vertex, GraphicsProgram};
+use crate::graphics::{Vertex};
 use crate::wgpu_program::WGPUGraphics;
 use crate::shader::create_shader_program;
 // use futures::lock::Mutex;

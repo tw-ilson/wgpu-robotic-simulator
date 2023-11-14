@@ -24,17 +24,9 @@ impl CameraUniform {
             view_proj: Mat4::identity(),
         }
     }
-    pub fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.get_view_projection_matrix()
-    }
 }
-// #[repr(C)]
-// #[derive(Debug, Copy, Clone)]
-// struct InputState {
-//     w:bool, a:bool, s:bool, d:bool
-// }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct Camera {
     eye_posn: glm::Vec3,
     view_direction: glm::Vec3,
@@ -43,6 +35,45 @@ pub struct Camera {
     fovy: f32,
     znear: f32,
     zfar: f32,
+}
+impl Camera {
+    pub fn new(w: u32, h: u32) -> Self {
+        // println!("Created a Camera");
+        let mut new_camera = Self {
+            eye_posn: glm::vec3(0.0, 0.0, 2.0),
+            view_direction: glm::vec3(0.0, 0.0, -1.0),
+            up_vector: glm::vec3(0.0, 1.0, 0.0),
+            aspect: (w as f32) / (h as f32),
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0,
+
+        };
+        new_camera
+    }
+    pub fn update_view_proj(&mut self, camera_uniform: &mut CameraUniform) {
+        camera_uniform.view_proj = self.get_view_projection_matrix();
+    }
+    fn get_view_projection_matrix(&self) -> glm::Mat4 {
+        let view = glm::look_at(
+            &self.eye_posn,
+            &(self.eye_posn + self.view_direction),
+            &self.up_vector,
+        );
+        let proj = glm::perspective(self.aspect, self.fovy, self.znear, self.zfar);
+        OPENGL_TO_WGPU_MATRIX * proj * view
+    }
+    pub fn set_eye_posn(&mut self, x: f32, y: f32, z: f32) {
+        self.eye_posn.x = x;
+        self.eye_posn.y = y;
+        self.eye_posn.z = z
+    }
+    pub fn get_eye_posn(&self) -> glm::Vec3 {
+        self.eye_posn
+    }
+    pub fn get_view_direction(&self) -> glm::Vec3 {
+        self.view_direction
+    }
 }
 
 #[repr(C)]
@@ -110,7 +141,7 @@ impl CameraController {
     pub fn mouse_look(&mut self, cam: &mut Camera, delta_x: f32, delta_y: f32) {
         // let new_mouse_posn: glm::Vec2 = glm::vec2(mouse_x, mouse_y);
         // let delta: glm::Vec2 = self.old_mouse_posn - new_mouse_posn;
-        let sensitivity = 0.1;
+        let sensitivity = 0.01;
         let right_vec = glm::vec3(
                 cam.view_direction.z,
                 cam.view_direction.y,
@@ -165,37 +196,3 @@ impl CameraController {
 
 }
 
-impl Camera {
-    pub fn new(w: u32, h: u32) -> Self {
-        println!("Created a Camera");
-        Self {
-            eye_posn: glm::vec3(0.0, 0.0, 2.0),
-            view_direction: glm::vec3(0.0, 0.0, -1.0),
-            up_vector: glm::vec3(0.0, 1.0, 0.0),
-            aspect: (w as f32) / (h as f32),
-            fovy: 45.0,
-            znear: 0.1,
-            zfar: 100.0,
-        }
-    }
-    pub fn get_view_projection_matrix(&self) -> glm::Mat4 {
-        let view = glm::look_at(
-            &self.eye_posn,
-            &(self.eye_posn + self.view_direction),
-            &self.up_vector,
-        );
-        let proj = glm::perspective(self.aspect, self.fovy, self.znear, self.zfar);
-        OPENGL_TO_WGPU_MATRIX * proj * view
-    }
-    pub fn set_eye_posn(&mut self, x: f32, y: f32, z: f32) {
-        self.eye_posn.x = x;
-        self.eye_posn.y = y;
-        self.eye_posn.z = z
-    }
-    pub fn get_eye_posn(&self) -> glm::Vec3 {
-        self.eye_posn
-    }
-    pub fn get_view_direction(&self) -> glm::Vec3 {
-        self.view_direction
-    }
-}

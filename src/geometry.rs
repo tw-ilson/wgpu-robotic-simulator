@@ -1,18 +1,25 @@
 use crate::graphics::{Vertex};
 use std::{convert::{From, Into}, hash::Hash};
 use itertools::Itertools;
+use std::ops::Range;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct Triangle {
     pub vertices: [Vertex; 3],
 }
+
+#[non_exhaustive]
+pub enum MeshType {
+    STL(String),
+    OBJ(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct Mesh {
     faces: Vec<Triangle>
 }
-impl From<String> for Mesh {
-    fn from(fstring: String) -> Self {
+fn parse_stl(fstring:String) -> Mesh {
         let lines:Vec<&str> = {
             let mut lines = fstring.lines();
             match lines.next() {
@@ -21,7 +28,7 @@ impl From<String> for Mesh {
             }
             lines
         }.collect_vec();
-        Self {
+        Mesh {
             faces: {
                 let mut k = 0;
                 lines.iter().filter_map(
@@ -55,6 +62,15 @@ impl From<String> for Mesh {
             }
         }
     }
+
+impl From<MeshType> for Mesh {
+    fn from(mesh_type: MeshType) -> Self {
+        match mesh_type {
+            MeshType::STL(fstring) => parse_stl(fstring),
+            // OBJ(fstring) -> parse_obj(fstring),
+            _=> panic!("type unsupported")
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -63,15 +79,35 @@ pub struct Polyhedron {
     // edges: Vec<(u16,u16)>
     pub indices: Vec<u16>,
 }
+
 impl Polyhedron {
-    // fn edges(&self) -> &Vec<Vertex> {
-    //     &self.verts
-    // }
-    fn check() {
-        unimplemented!()
+    pub fn from_fast(mesh:Mesh) -> Self {
+        Self {
+            verts: mesh.faces.iter().flat_map(|tri| tri.vertices).collect(),
+            indices: (0..mesh.faces.len() as u16).flat_map(|fi|{let k:u16=fi*3;k..k+3}).collect(),
+        }
+    }
+    pub fn calculate_normals(&mut self) {
+        let mut i = 0;
+        while i < self.indices.len() {
+            let edge1 = self.verts[self.indices[i+1] as usize].position - self.verts[self.indices[i] as usize].position;
+            let edge2 = self.verts[self.indices[i+2] as usize].position - self.verts[self.indices[i+1] as usize].position;
+            let normal = glm::cross(&edge1, &edge2);
+            self.verts[self.indices[i] as usize].normal = normal;
+            self.verts[self.indices[i+1] as usize].normal = normal;
+            self.verts[self.indices[i+2] as usize].normal = normal;
+            i=i+3;
+        }
+    }
+    pub fn scale(&mut self, factor: f32) {
+        for mut v in &mut self.verts {
+            v.position = v.position * factor;
+        }
     }
 }
+
 impl From<Mesh> for Polyhedron {
+    // create efficient index buffer -- adds overhead
     fn from(mesh: Mesh) -> Self {
         let verts: Vec<Vertex> = mesh.faces
             .iter()
@@ -85,23 +121,61 @@ impl From<Mesh> for Polyhedron {
                 for i in 0..3 {
                     let idx1 = verts.iter().position(|&v_b| v_b == tri.vertices[i]).unwrap();
                     indices.push(idx1 as u16);
-                    // let idx2 = verts.iter().position(|&v_b| v_b == tri.vertices[(i+1)%3]).unwrap();
-                    // edges.push(if idx1 < idx2 {
-                    //     (idx1 as u16, idx2 as u16)
-                    // } else {
-                    //     (idx2 as u16, idx1 as u16)
-                    // });
                 };
                 indices
             }).collect();
-        // let edges: Vec<(u16, u16)> = edge_set.into_iter().collect();
-       // get the correct set of edges
-       Self { verts, indices }
+       let mut poly = Self { verts, indices };
+       poly.calculate_normals();
+       poly
     }
 }
-// impl Into<Vec<Triangle>> for Polyhedron {
-//     fn into(self) -> Vec<Triangle> {
-//         unimplemented!()
+
+pub trait DrawModel<'a> {
+    fn draw_mesh(
+        &mut self,
+        mesh: &'a Polyhedron,
+        // material: &'a Material,
+        camera_bind_group: &'a wgpu::BindGroup,
+        light_bind_group: &'a wgpu::BindGroup,
+    );
+    fn draw_mesh_instanced(
+        &mut self,
+        mesh: &'a Polyhedron,
+        // material: &'a Material,
+        instances: Range<u32>,
+        camera_bind_group: &'a wgpu::BindGroup,
+        light_bind_group: &'a wgpu::BindGroup,
+    );
+
+}
+
+// impl<'a, 'b> DrawModel<'b> for wgpu::RenderPass<'a>
+// where
+//     'b: 'a,
+// {
+//     fn draw_mesh(
+//         &mut self,
+//         mesh: &'b Polyhedron,
+//         // material: &'b Material,
+//         camera_bind_group: &'b wgpu::BindGroup,
+//         light_bind_group: &'b wgpu::BindGroup,
+//     ) {
+//         self.draw_mesh_instanced(mesh, 0..1, camera_bind_group, light_bind_group);
+//     }
+//
+//     fn draw_mesh_instanced(
+//         &mut self,
+//         mesh: &'b Polyhedron,
+//         // material: &'b Material,
+//         instances: Range<u32>,
+//         camera_bind_group: &'b wgpu::BindGroup,
+//         light_bind_group: &'b wgpu::BindGroup,
+//     ) {
+//         self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+//         self.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+//         // self.set_bind_group(0, &material.bind_group, &[]);
+//         self.set_bind_group(1, camera_bind_group, &[]);
+//         self.set_bind_group(2, light_bind_group, &[]);
+//         self.draw_indexed(0..mesh.num_elements, 0, instances);
 //     }
 // }
-//
