@@ -1,8 +1,13 @@
-use crate::graphics::{Vertex};
-use std::{convert::{From, Into}, hash::Hash};
+use crate::graphics::Vertex;
+use crate::wgpu_program::WGPUGraphics;
 use itertools::Itertools;
-use std::ops::Range;
 use std::collections::HashSet;
+use std::ops::Range;
+use std::str::SplitWhitespace;
+use std::{
+    convert::{From, Into},
+    hash::Hash,
+};
 
 #[derive(Debug, Clone)]
 pub struct Triangle {
@@ -15,167 +20,240 @@ pub enum MeshType {
     OBJ(String),
 }
 
-#[derive(Debug, Clone)]
-pub struct Mesh {
-    faces: Vec<Triangle>
-}
-fn parse_stl(fstring:String) -> Mesh {
-        let lines:Vec<&str> = {
-            let mut lines = fstring.lines();
-            match lines.next() {
-                Some(s) => { if !s.trim().starts_with("solid") {panic!()}},
-                _=> panic!(),
-            }
-            lines
-        }.collect_vec();
-        Mesh {
-            faces: {
-                let mut k = 0;
-                lines.iter().filter_map(
-                    |line| {
-                            fn get_vert(s: &str) -> glm::Vec3{
-                                let mut toks = s.split_whitespace().into_iter();
-                                assert!(Some("vertex") == toks.next());
-                                [
-                                    toks.next().unwrap().parse::<f32>().unwrap(),
-                                    toks.next().unwrap().parse::<f32>().unwrap(),
-                                    toks.next().unwrap().parse::<f32>().unwrap()
-                                ].into()
-                            }
-                            
-                            let r = if line.split_whitespace().next().unwrap() == "facet" {
-                                Some(
-                                    Triangle {
-                                        vertices: [
-                                                get_vert(lines.clone()[k+2]).into(),
-                                                get_vert(lines.clone()[k+3]).into(),
-                                                get_vert(lines.clone()[k+4]).into(),
-                                            ]
-                                    }
-                                )
-                            } else {
-                                None
-                            };
-                            k += 1;
-                            r
-                }).collect()
-            }
-        }
-    }
-
-impl From<MeshType> for Mesh {
-    fn from(mesh_type: MeshType) -> Self {
-        match mesh_type {
-            MeshType::STL(fstring) => parse_stl(fstring),
-            // OBJ(fstring) -> parse_obj(fstring),
-            _=> panic!("type unsupported")
-        }
-    }
+#[derive(Default, Debug, Clone)]
+pub struct TriMesh {
+    faces: Vec<Triangle>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Polyhedron {
     pub verts: Vec<Vertex>,
-    // edges: Vec<(u16,u16)>
     pub indices: Vec<u16>,
 }
 
-impl Polyhedron {
-    pub fn from_fast(mesh:Mesh) -> Self {
-        Self {
-            verts: mesh.faces.iter().flat_map(|tri| tri.vertices).collect(),
-            indices: (0..mesh.faces.len() as u16).flat_map(|fi|{let k:u16=fi*3;k..k+3}).collect(),
-        }
+impl TriMesh {
+    pub fn add_triangle(&mut self, v: [glm::Vec3; 3]) {
+        self.faces.push(Triangle {
+            vertices: [v[0].into(), v[1].into(), v[2].into()],
+        })
+    }
+    pub fn add_rectangle(&mut self, quad: [glm::Vec3; 4]) {
+        self.faces.push(Triangle {
+            vertices: [quad[0].into(), quad[1].into(), quad[2].into()],
+        });
+        self.faces.push(Triangle {
+            vertices: [quad[0].into(), quad[2].into(), quad[3].into()],
+        });
     }
     pub fn calculate_normals(&mut self) {
         let mut i = 0;
-        while i < self.indices.len() {
-            let edge1 = self.verts[self.indices[i+1] as usize].position - self.verts[self.indices[i] as usize].position;
-            let edge2 = self.verts[self.indices[i+2] as usize].position - self.verts[self.indices[i+1] as usize].position;
+        for tri in self.faces.iter_mut() {
+            let edge1 = tri.vertices[1].position - tri.vertices[0].position;
+            let edge2 = tri.vertices[2].position - tri.vertices[1].position;
             let normal = glm::cross(&edge1, &edge2);
-            self.verts[self.indices[i] as usize].normal = normal;
-            self.verts[self.indices[i+1] as usize].normal = normal;
-            self.verts[self.indices[i+2] as usize].normal = normal;
-            i=i+3;
-        }
-    }
-    pub fn scale(&mut self, factor: f32) {
-        for mut v in &mut self.verts {
-            v.position = v.position * factor;
+            tri.vertices[0].normal = normal;
+            tri.vertices[1].normal = normal;
+            tri.vertices[2].normal = normal;
         }
     }
 }
 
-impl From<Mesh> for Polyhedron {
+pub trait BoxMesh: Default {
+    fn create_box(sz: glm::Vec3) -> Self;
+}
+pub trait CylinderMesh: Default {
+    fn create_cylinder(r: f32, h: f32, nface: isize) -> Self;
+}
+impl BoxMesh for TriMesh {
+    fn create_box(sz: glm::Vec3) -> Self {
+        let [side1, side2, side3]: [glm::Vec3; 3];
+        side1 = [sz[0], 0.0, 0.0].into();
+        side2 = [0.0, sz[1], 0.0].into();
+        side3 = [0.0, 0.0, sz[2]].into();
+
+        let v1 = 0.5 * (side1 + side2 + side3);
+        let v2 = v1 + side1;
+        let v3 = v2 + side2;
+        let v4 = v3 - side1;
+        let v5 = v1 + side3;
+        let v6 = v2 + side3;
+        let v7 = v3 + side3;
+        let v8 = v4 + side3;
+        let mut tris = TriMesh::default();
+        tris.add_rectangle([v1, v2, v6, v5]);
+        tris.add_rectangle([v2, v3, v7, v6]);
+        tris.add_rectangle([v3, v4, v8, v7]);
+        tris.add_rectangle([v4, v1, v5, v8]);
+        tris.add_rectangle([v1, v4, v3, v2]);
+        tris.add_rectangle([v5, v6, v7, v8]);
+        return tris;
+    }
+}
+impl CylinderMesh for TriMesh {
+    fn create_cylinder(r: f32, h: f32, nface: isize) -> TriMesh {
+        let [side1, side2, side3]: [glm::Vec3; 3];
+        side1 = [r, 0.0, 0.0].into();
+        side2 = [0.0, r, 0.0].into();
+        side3 = [0.0, 0.0, h].into();
+        let bottom = 0.5 * side3; // centre of base
+        let top = bottom + side3; // centre of top
+
+        use std::f32::consts::PI;
+        let dtheta: f32 = 2.0 * PI / (nface as f32);
+        let [mut v1, mut v2, mut v3, mut v4]: [glm::Vec3; 4];
+        v2 = bottom + side1;
+        v3 = v2 + side3;
+        let mut mesh = TriMesh::default();
+        for n in 1..=nface {
+            let theta: f32 = (n as f32) * dtheta;
+            v1 = v2;
+            v4 = v3;
+            v2 = bottom + theta.cos() * side1 + theta.sin() * side2;
+            v3 = v2 + side3;
+            mesh.add_rectangle([v1, v2, v3, v4]); // add sides as a series of rectangles
+            mesh.add_triangle([v2, v1, bottom]); // add triangles for bottom
+            mesh.add_triangle([v4, v3, top]); // add triangles for top
+        }
+        return mesh;
+    }
+}
+
+fn parse_stl(fstring: String) -> TriMesh {
+    let lines: Vec<&str> = {
+        let mut lines = fstring.lines();
+        match lines.next() {
+            Some(s) => {
+                if !s.trim().starts_with("solid") {
+                    panic!()
+                }
+            }
+            _ => panic!(),
+        }
+        lines
+    }
+    .collect_vec();
+    TriMesh {
+        faces: {
+            let mut k = 0;
+            lines
+                .iter()
+                .filter_map(|line| {
+                    fn get_vert(toks: &mut std::str::SplitWhitespace) -> glm::Vec3 {
+                        let t = toks.next();
+                        assert!(Some("vertex") == t || Some("normal") == t);
+                        [
+                            toks.next().unwrap().parse::<f32>().unwrap(),
+                            toks.next().unwrap().parse::<f32>().unwrap(),
+                            toks.next().unwrap().parse::<f32>().unwrap(),
+                        ]
+                        .into()
+                    }
+                    let mut split = line.split_whitespace();
+                    let r = if split.next().unwrap() == "facet" {
+                        let normal = get_vert(&mut split);
+                        let mut vertices: [Vertex; 3] = [
+                            get_vert(&mut lines.clone()[k + 2].split_whitespace()).into(),
+                            get_vert(&mut lines.clone()[k + 3].split_whitespace()).into(),
+                            get_vert(&mut lines.clone()[k + 4].split_whitespace()).into(),
+                        ];
+                        vertices[0].normal = normal;
+                        vertices[1].normal = normal;
+                        vertices[2].normal = normal;
+                        Some(Triangle { vertices })
+                    } else {
+                        None
+                    };
+                    k += 1;
+                    r
+                })
+                .collect()
+        },
+    }
+}
+
+impl From<MeshType> for TriMesh {
+    fn from(mesh_type: MeshType) -> Self {
+        match mesh_type {
+            MeshType::STL(fname) => {
+                parse_stl(std::fs::read_to_string(fname).expect("could not read file"))
+            }
+            // OBJ(fstring) -> parse_obj(fstring),
+            _ => panic!("type unsupported"),
+        }
+    }
+}
+
+impl Default for Polyhedron {
+    // empty polyhedron
+    fn default() -> Self {
+        Self {
+            verts: vec![],
+            indices: vec![],
+        }
+    }
+}
+
+impl Polyhedron {
+    pub fn from_fast(mesh: TriMesh) -> Self {
+        Self {
+            verts: mesh.faces.iter().flat_map(|tri| tri.vertices).collect(),
+            indices: (0..mesh.faces.len() as u16)
+                .flat_map(|fi| {
+                    let k: u16 = fi * 3;
+                    k..k + 3
+                })
+                .collect(),
+        }
+    }
+    pub fn scale(&mut self, factor: f32) {
+        for v in self.verts.iter_mut() {
+            (*v).position *= factor;
+        }
+    }
+    pub fn rotate(&mut self, angle: f32, axis: glm::Vec3) {
+        let rot_quat = glm::quat_angle_axis(angle, &axis);
+        for v in self.verts.iter_mut() {
+            (*v).position = glm::quat_rotate_vec3(&rot_quat, &(*v).position);
+        }
+    }
+
+}
+
+impl From<String> for Polyhedron {
+    fn from(value: String) -> Self {
+        match value.split(".").last().unwrap().to_lowercase().as_str() {
+            "stl" => Polyhedron::from(TriMesh::from(MeshType::STL(value))),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl From<TriMesh> for Polyhedron {
     // create efficient index buffer -- adds overhead
-    fn from(mesh: Mesh) -> Self {
-        let verts: Vec<Vertex> = mesh.faces
+    fn from(mut mesh: TriMesh) -> Self {
+        mesh.calculate_normals();
+        let verts: Vec<Vertex> = mesh
+            .faces
             .iter()
             .flat_map(|tri| tri.vertices.iter().cloned())
             .dedup()
             .collect_vec();
-        let indices: Vec<u16> = mesh.faces
+        let indices: Vec<u16> = mesh
+            .faces
             .iter()
             .flat_map(|tri| {
-                let mut indices:Vec<u16> = Vec::new();
+                let mut indices: Vec<u16> = Vec::new();
                 for i in 0..3 {
-                    let idx1 = verts.iter().position(|&v_b| v_b == tri.vertices[i]).unwrap();
+                    let idx1 = verts
+                        .iter()
+                        .position(|&v_b| v_b == tri.vertices[i])
+                        .unwrap();
                     indices.push(idx1 as u16);
-                };
+                }
                 indices
-            }).collect();
-       let mut poly = Self { verts, indices };
-       poly.calculate_normals();
-       poly
+            })
+            .collect();
+        let mut poly = Self { verts, indices };
+        poly
     }
 }
-
-pub trait DrawModel<'a> {
-    fn draw_mesh(
-        &mut self,
-        mesh: &'a Polyhedron,
-        // material: &'a Material,
-        camera_bind_group: &'a wgpu::BindGroup,
-        light_bind_group: &'a wgpu::BindGroup,
-    );
-    fn draw_mesh_instanced(
-        &mut self,
-        mesh: &'a Polyhedron,
-        // material: &'a Material,
-        instances: Range<u32>,
-        camera_bind_group: &'a wgpu::BindGroup,
-        light_bind_group: &'a wgpu::BindGroup,
-    );
-
-}
-
-// impl<'a, 'b> DrawModel<'b> for wgpu::RenderPass<'a>
-// where
-//     'b: 'a,
-// {
-//     fn draw_mesh(
-//         &mut self,
-//         mesh: &'b Polyhedron,
-//         // material: &'b Material,
-//         camera_bind_group: &'b wgpu::BindGroup,
-//         light_bind_group: &'b wgpu::BindGroup,
-//     ) {
-//         self.draw_mesh_instanced(mesh, 0..1, camera_bind_group, light_bind_group);
-//     }
-//
-//     fn draw_mesh_instanced(
-//         &mut self,
-//         mesh: &'b Polyhedron,
-//         // material: &'b Material,
-//         instances: Range<u32>,
-//         camera_bind_group: &'b wgpu::BindGroup,
-//         light_bind_group: &'b wgpu::BindGroup,
-//     ) {
-//         self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-//         self.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-//         // self.set_bind_group(0, &material.bind_group, &[]);
-//         self.set_bind_group(1, camera_bind_group, &[]);
-//         self.set_bind_group(2, light_bind_group, &[]);
-//         self.draw_indexed(0..mesh.num_elements, 0, instances);
-//     }
-// }

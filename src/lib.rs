@@ -3,6 +3,7 @@
 pub mod camera;
 pub mod light;
 pub mod geometry;
+pub mod urdf;
 pub mod graphics;
 // pub mod physics;
 pub mod util;

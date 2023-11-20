@@ -1,7 +1,7 @@
 use crate::{
     camera::{Camera, CameraController, CameraUniform},
     light::{Light, LightUniform},
-    graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram, Vertex},
+    graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram, Vertex}, geometry::Polyhedron,
 };
 use bytemuck::{cast_slice, Pod, Zeroable};
 use std::collections::HashMap;
@@ -117,6 +117,31 @@ impl Vertex {
             array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &Self::ATTRIBS,
+        }
+    }
+}
+
+pub struct VAO {
+    vertex_buffer: wgpu::Buffer, 
+    index_buffer: wgpu::Buffer,
+}
+
+// not a big fan of this
+pub trait DrawMesh<'a> {
+    fn draw_mesh(&mut self, vao: &'a VAO, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, n_indices: u32,) ;
+    fn draw_mesh_list(&mut self, vao_list: &'a Vec<VAO>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, n_indices: u32,) ;
+}
+impl <'a, 'b> DrawMesh<'b> for wgpu::RenderPass<'a> where 'b: 'a {
+    fn draw_mesh(&mut self, vao: &'b VAO, camera_bind_group: &'b wgpu::BindGroup, light_bind_group: &'b wgpu::BindGroup, n_indices: u32,) {
+        self.set_bind_group(0, &camera_bind_group, &[]);
+        self.set_bind_group(1, &light_bind_group, &[]);
+        self.set_vertex_buffer(0, vao.vertex_buffer.slice(..));
+        self.set_index_buffer(vao.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        self.draw_indexed(0..n_indices, 0, 0..1);
+    }
+    fn draw_mesh_list(&mut self, vao_list: &'a Vec<VAO>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, n_indices: u32,) {
+        for vao in vao_list {
+            self.draw_mesh(vao, camera_bind_group, light_bind_group, n_indices)
         }
     }
 }
@@ -239,12 +264,62 @@ impl WGPUGraphics {
     }
 
     pub fn update_light(&mut self, light_buffer: &wgpu::Buffer) {
-        self.backend.light_uniform.update();
+        // self.backend.light_uniform.update();
+        self.backend.light_uniform.set(self.backend.camera.get_eye_posn());
         self.assign_uniform(light_buffer, self.backend.light_uniform);
     }
 
     pub fn assign_uniform<T: Zeroable + Pod>(&mut self, buffer: &wgpu::Buffer, data: T) {
         self.backend.queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[data]));
+    }
+
+    pub fn create_vao(&mut self, poly: Polyhedron) -> VAO {
+        VAO {
+            vertex_buffer: self.create_vertex_buffer(poly.verts),
+            index_buffer: self.create_index_buffer(poly.indices)
+        }
+    }
+
+    pub fn draw(&mut self, pipeline: &wgpu::RenderPipeline, vao_list: &Vec<VAO>) {
+        self.set_clear_color((1.0, 1.0, 0.0, 1.0));
+        let output = self
+            .backend.surface
+            .get_current_texture()
+            .expect("failed to get current texture");
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder =
+            self.backend.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
+        {
+            let mut render_pass =
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+            render_pass.set_pipeline(pipeline);
+            render_pass.draw_mesh(&vao_list[0], self.camera_bind_group(), self.light_bind_group(), self.n_indices());
+        }
+        self.queue().submit(std::iter::once(encoder.finish()));
+        output.present();
     }
 
     //constructor
@@ -357,7 +432,6 @@ impl WGPUGraphics {
 impl GraphicsProgram for WGPUGraphics {
     fn swap_window(&self) {}
     fn get_backend_info(&self) {
-
     }
     fn default_state(&mut self) {
         self.backend.surface.configure(self.device(), self.config());
