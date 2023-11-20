@@ -4,21 +4,6 @@ use std::str::FromStr;
 use xml::reader::{Events, XmlEvent, XmlEvent::*};
 use xml::EventReader;
 
-#[derive(Default, Debug, Clone, Copy)]
-pub struct Transform {
-    tmatrix: glm::Mat4x4,
-}
-
-impl Transform {
-    fn new(xyz: glm::Vec3, rpy: glm::Vec3) -> Self {
-        Self {
-            tmatrix: glm::Mat4x4::zeros(),
-        }
-    }
-    fn rotate(&mut self, xyz: glm::Vec3) {}
-    fn translate(&mut self, rpy: glm::Vec3) {}
-}
-
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Origin {
     xyz: glm::Vec3,
@@ -67,31 +52,6 @@ pub struct RobotDescriptor {
     joints: Vec<Joint>,
 }
 
-// trait Empty {
-//     fn empty() -> Self;
-// }
-//
-// impl Empty for Link {
-//     fn empty() -> Self {
-//         Self {
-//             link_name: String::default(),
-//             geometry: Polyhedron::default(),
-//             origin: Origin::default(),
-//             color: None,
-//         }
-//     }
-// }
-//
-// impl Empty for RobotDescriptor {
-//     fn empty() -> Self {
-//         Self {
-//             name: None,
-//             links: vec![],
-//             joints: vec![],
-//         }
-//     }
-// }
-
 type ParseRobotError = Box<dyn std::error::Error>;
 
 //gets position, rotation from origin element
@@ -123,12 +83,6 @@ fn parse_origin(origin_event: XmlEvent) -> Result<Origin, ParseRobotError> {
     }
 }
 
-// fn create_box() -> Polyhedron {
-//     unimplemented!()
-// }
-// fn create_cylinder() -> Polyhedron {
-//     unimplemented!()
-// }
 fn create_sphere() -> Polyhedron {
     unimplemented!()
 }

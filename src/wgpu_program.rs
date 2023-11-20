@@ -122,26 +122,27 @@ impl Vertex {
 }
 
 pub struct VAO {
+    n_indices: u32,
     vertex_buffer: wgpu::Buffer, 
     index_buffer: wgpu::Buffer,
 }
 
 // not a big fan of this
 pub trait DrawMesh<'a> {
-    fn draw_mesh(&mut self, vao: &'a VAO, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, n_indices: u32,) ;
-    fn draw_mesh_list(&mut self, vao_list: &'a Vec<VAO>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, n_indices: u32,) ;
+    fn draw_mesh(&mut self, vao: &'a VAO, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup) ;
+    fn draw_mesh_list(&mut self, vao_list: &'a Vec<VAO>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup) ;
 }
 impl <'a, 'b> DrawMesh<'b> for wgpu::RenderPass<'a> where 'b: 'a {
-    fn draw_mesh(&mut self, vao: &'b VAO, camera_bind_group: &'b wgpu::BindGroup, light_bind_group: &'b wgpu::BindGroup, n_indices: u32,) {
+    fn draw_mesh(&mut self, vao: &'b VAO, camera_bind_group: &'b wgpu::BindGroup, light_bind_group: &'b wgpu::BindGroup) {
         self.set_bind_group(0, &camera_bind_group, &[]);
         self.set_bind_group(1, &light_bind_group, &[]);
         self.set_vertex_buffer(0, vao.vertex_buffer.slice(..));
         self.set_index_buffer(vao.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        self.draw_indexed(0..n_indices, 0, 0..1);
+        self.draw_indexed(0..vao.n_indices, 0, 0..1);
     }
-    fn draw_mesh_list(&mut self, vao_list: &'a Vec<VAO>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, n_indices: u32,) {
+    fn draw_mesh_list(&mut self, vao_list: &'a Vec<VAO>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup) {
         for vao in vao_list {
-            self.draw_mesh(vao, camera_bind_group, light_bind_group, n_indices)
+            self.draw_mesh(vao, camera_bind_group, light_bind_group)
         }
     }
 }
@@ -168,12 +169,6 @@ impl WGPUGraphics {
     pub fn queue(&self) -> &wgpu::Queue {
         &self.backend.queue
     }
-    // pub fn pipeline(&self) -> &wgpu::RenderPipeline {
-    //     match &self.backend.render_pipeline {
-    //         Some(pipeline) => pipeline,
-    //         None => panic!("Accessed pipeline before creation!"),
-    //     }
-    // }
     pub fn config(&self) -> &wgpu::SurfaceConfiguration {
         &self.backend.config
     }
@@ -275,6 +270,7 @@ impl WGPUGraphics {
 
     pub fn create_vao(&mut self, poly: Polyhedron) -> VAO {
         VAO {
+            n_indices: poly.indices.len() as u32,
             vertex_buffer: self.create_vertex_buffer(poly.verts),
             index_buffer: self.create_index_buffer(poly.indices)
         }
@@ -316,7 +312,7 @@ impl WGPUGraphics {
                     timestamp_writes: None,
                 });
             render_pass.set_pipeline(pipeline);
-            render_pass.draw_mesh(&vao_list[0], self.camera_bind_group(), self.light_bind_group(), self.n_indices());
+            render_pass.draw_mesh_list(&vao_list, self.camera_bind_group(), self.light_bind_group());
         }
         self.queue().submit(std::iter::once(encoder.finish()));
         output.present();

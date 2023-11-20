@@ -1,12 +1,7 @@
 use crate::graphics::Vertex;
-use crate::wgpu_program::WGPUGraphics;
 use itertools::Itertools;
-use std::collections::HashSet;
-use std::ops::Range;
-use std::str::SplitWhitespace;
 use std::{
     convert::{From, Into},
-    hash::Hash,
 };
 
 #[derive(Debug, Clone)]
@@ -25,8 +20,52 @@ pub struct TriMesh {
     faces: Vec<Triangle>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Transform {
+    tmatrix: glm::Mat4x4,
+}
+impl Default for Transform {
+    fn default() -> Self {
+        Self { tmatrix: glm::Mat4x4::identity() }
+    }
+}
+
+impl std::ops::Add<Transform> for Transform {
+    type Output = Transform;
+    fn add(self, rhs: Transform) -> Self::Output {
+        Transform { tmatrix: self.tmatrix + rhs.tmatrix }
+    }
+}
+impl std::ops::Sub<Transform> for Transform {
+    type Output = Transform;
+    fn sub(self, rhs: Transform) -> Self::Output {
+        Transform { tmatrix: self.tmatrix - rhs.tmatrix }
+    }
+}
+
+impl Transform {
+    fn new(xyz: glm::Vec3, rpy: glm::Vec3) -> Self {
+        let mut t = Self::default();
+        t.rotate_rpy(rpy);
+        t.translate(xyz);
+        t
+    }
+    fn rotate_rpy(&mut self, rpy: glm::Vec3) {
+        self.tmatrix += glm::rotate_x(&self.tmatrix, rpy[0]);
+        self.tmatrix += glm::rotate_y(&self.tmatrix, rpy[1]);
+        self.tmatrix += glm::rotate_z(&self.tmatrix, rpy[2]);
+    }
+    fn rotate(&mut self, axis: glm::Vec3, angle: f32) {
+        self.tmatrix += glm::rotate(&self.tmatrix, angle, &axis);
+    }
+    fn translate(&mut self, xyz: glm::Vec3) {
+        self.tmatrix += glm::translate(&self.tmatrix, &xyz);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Polyhedron {
+    transform: Transform,
     pub verts: Vec<Vertex>,
     pub indices: Vec<u16>,
 }
@@ -46,7 +85,6 @@ impl TriMesh {
         });
     }
     pub fn calculate_normals(&mut self) {
-        let mut i = 0;
         for tri in self.faces.iter_mut() {
             let edge1 = tri.vertices[1].position - tri.vertices[0].position;
             let edge2 = tri.vertices[2].position - tri.vertices[1].position;
@@ -187,6 +225,7 @@ impl Default for Polyhedron {
     // empty polyhedron
     fn default() -> Self {
         Self {
+            transform: Transform::default(),
             verts: vec![],
             indices: vec![],
         }
@@ -196,6 +235,7 @@ impl Default for Polyhedron {
 impl Polyhedron {
     pub fn from_fast(mesh: TriMesh) -> Self {
         Self {
+            transform: Transform::default(),
             verts: mesh.faces.iter().flat_map(|tri| tri.vertices).collect(),
             indices: (0..mesh.faces.len() as u16)
                 .flat_map(|fi| {
@@ -205,18 +245,14 @@ impl Polyhedron {
                 .collect(),
         }
     }
+    // pub fn update(&mut self) {
+    //
+    // }
     pub fn scale(&mut self, factor: f32) {
         for v in self.verts.iter_mut() {
             (*v).position *= factor;
         }
     }
-    pub fn rotate(&mut self, angle: f32, axis: glm::Vec3) {
-        let rot_quat = glm::quat_angle_axis(angle, &axis);
-        for v in self.verts.iter_mut() {
-            (*v).position = glm::quat_rotate_vec3(&rot_quat, &(*v).position);
-        }
-    }
-
 }
 
 impl From<String> for Polyhedron {
@@ -253,7 +289,11 @@ impl From<TriMesh> for Polyhedron {
                 indices
             })
             .collect();
-        let mut poly = Self { verts, indices };
+        let mut poly = Self {
+            transform: Transform::default(),
+            verts,
+            indices,
+        };
         poly
     }
 }

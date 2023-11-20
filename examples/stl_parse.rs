@@ -25,7 +25,10 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // poly.rotate(-glm::pi::<f32>()/2., [1.,0.,0.].into());
 
     // Create buffers
-    let vao_list = vec![program.create_vao(box_mesh), program.create_vao(cylinder_mesh)];
+    let vao_list = vec![
+        program.create_vao(box_mesh), 
+        program.create_vao(cylinder_mesh),
+    ];
 
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();
