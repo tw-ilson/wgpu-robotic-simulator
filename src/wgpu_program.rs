@@ -1,12 +1,14 @@
 use crate::{
+    texture::Texture,
     camera::{Camera, CameraController, CameraUniform},
     light::{Light, LightUniform},
-    graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram, Vertex}, geometry::Polyhedron,
+    graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram, Vertex}, 
+    geometry::Polyhedron,
 };
 use bytemuck::{cast_slice, Pod, Zeroable};
 use std::collections::HashMap;
 use itertools::izip;
-use wgpu::{util::DeviceExt, Device, Surface};
+use wgpu::{util::DeviceExt, Device, Surface, StoreOp};
 use winit::{dpi::PhysicalSize, event_loop::{EventLoop, }, event::WindowEvent, window::{Window, WindowBuilder}};
 
 pub struct WGPUState {
@@ -23,6 +25,7 @@ pub struct WGPUState {
     camera_uniform: CameraUniform,
     light: Light,
     light_uniform: LightUniform,
+    depth_texture: Texture,
     bindings: Bindings, 
     num_vertices: u32,
     num_indices: u32,
@@ -187,6 +190,9 @@ impl WGPUGraphics {
     pub fn bind_layouts(&self) -> Vec<&wgpu::BindGroupLayout> {
         self.backend.bindings.bind_layouts.iter().collect()
     }
+    pub fn bind_groups(&self) -> Vec<&wgpu::BindGroup> {
+        self.backend.bindings.bind_groups.iter().collect()
+    }
     pub fn camera_bind_group(&self) -> &wgpu::BindGroup {
         &self.backend.bindings.bind_groups[0]
     }
@@ -199,7 +205,7 @@ impl WGPUGraphics {
     }
 
     // helpers to create buffers
-    fn create_buffer<T: Zeroable + Pod>(
+    pub fn create_buffer<T: Zeroable + Pod>(
         &mut self,
         name: &str,
         data: &[T],
@@ -307,7 +313,9 @@ impl WGPUGraphics {
                             store: wgpu::StoreOp::Store,
                         },
                     })],
-                    depth_stencil_attachment: None,
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.backend.depth_texture.view,
+                        depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
                     occlusion_query_set: None,
                     timestamp_writes: None,
                 });
@@ -322,26 +330,27 @@ impl WGPUGraphics {
     pub fn new(width: u32, height: u32, event: &EventLoop<()>) -> Self {
         // let window = Window::new(event).expect("unable to create winit window");
         let window = WindowBuilder::new().build(event).expect("unable to create winit window");
-        window.set_cursor_grab(winit::window::CursorGrabMode::Confined).unwrap();
+        window.set_cursor_grab(winit::window::CursorGrabMode::Locked).unwrap();
         window.set_cursor_visible(false);
-        #[cfg(target_arch = "wasm32")]
-        {
-            // Winit prevents sizing with CSS, so we have to set
-            // the size manually when on web.
-            // use winit::dpi::PhysicalSize;
-            // program.window.set_inner_size(PhysicalSize::new(width, height));
 
-            use winit::platform::web::WindowExtWebSys;
-            web_sys::window()
-                .and_then(|win| win.document())
-                .and_then(|doc| {
-                    let dst = doc.get_element_by_id("wasm-example")?;
-                    let canvas = web_sys::Element::from(window.canvas());
-                    dst.append_child(&canvas).ok()?;
-                    Some(())
-                })
-                .expect("Couldn't append canvas to document body.");
-        }
+        // #[cfg(target_arch = "wasm32")]
+        // {
+        //     // Winit prevents sizing with CSS, so we have to set
+        //     // the size manually when on web.
+        //     // use winit::dpi::PhysicalSize;
+        //     // program.window.set_inner_size(PhysicalSize::new(width, height));
+        //
+        //     use winit::platform::web::WindowExtWebSys;
+        //     web_sys::window()
+        //         .and_then(|win| win.document())
+        //         .and_then(|doc| {
+        //             let dst = doc.get_element_by_id("wasm-example")?;
+        //             let canvas = web_sys::Element::from(window.canvas());
+        //             dst.append_child(&canvas).ok()?;
+        //             Some(())
+        //         })
+        //         .expect("Couldn't append canvas to document body.");
+        // }
 
         let size = PhysicalSize::new(width, height);
         window.set_inner_size(size);
@@ -353,6 +362,7 @@ impl WGPUGraphics {
         });
         let surface =
             unsafe { instance.create_surface(&window) }.expect("unable to create surface");
+
         let (adapter, device, queue) = retrieve_adapter_device(&instance, &window);
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
@@ -373,6 +383,8 @@ impl WGPUGraphics {
             view_formats: vec![],
         };
 
+        let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
+
         let camera = Camera::new(width, height);
         let camera_controller = CameraController::default();
         // let camera_buffer = program.create_camera_buffer();
@@ -382,6 +394,8 @@ impl WGPUGraphics {
         let light_uniform = LightUniform::new();
 
         let mut bindings = Bindings::new();
+
+        // bindings.new_bind_group_layout("transform_bind_group", &device);
         bindings.new_bind_group_layout("camera_bind_group", &device);
         bindings.new_bind_group_layout("light_bind_group", &device);
 
@@ -404,6 +418,7 @@ impl WGPUGraphics {
                 camera_uniform,
                 light,
                 light_uniform,
+                depth_texture,
                 bindings,
                 num_vertices: 0,
                 num_indices: 0,
@@ -420,6 +435,7 @@ impl WGPUGraphics {
                 a: 0.2,
             },
         };
+
         program.default_state();
         program
     }

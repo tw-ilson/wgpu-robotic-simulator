@@ -1,4 +1,4 @@
-use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh};
+use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, Transform};
 use physics_engine::wgpu_program::WGPUGraphics;
 use physics_engine::graphics::{GraphicsProgram};
 use physics_engine::shader::create_shader_program;
@@ -10,15 +10,13 @@ use winit::{
 
 pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     let shader_string = include_str!("../shaders/shader.wgsl");
-    
-    // Create pipeline from vertex, fragment shaders
-    let pipeline = unsafe { create_shader_program(&program, shader_string) };
 
     program.get_backend_info();
 
     // let mut mesh = Mesh::from(MeshType::STL(String::from(include_str!())));
     let box_mesh = Polyhedron::from(TriMesh::create_box([1.,1.,1.].into()));
     let cylinder_mesh = Polyhedron::from(TriMesh::create_cylinder(1., 2., 30));
+    // box_mesh.transform;
 
     // let mut poly = Polyhedron::from_file("../assets/mesh/stl.stl");
     // poly.calculate_normals();
@@ -26,14 +24,25 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
     // Create buffers
     let vao_list = vec![
-        program.create_vao(box_mesh), 
         program.create_vao(cylinder_mesh),
+        program.create_vao(box_mesh), 
     ];
 
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();
     let light_buffer = program.create_light_buffer();
-    program.create_bind_groups(&[&camera_buffer, &light_buffer]);
+    let transform_buffer = program.create_buffer("transform_buffer" , &[Transform::default()], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+    program.create_bind_groups(&[
+                               // &transform_buffer,
+                               &camera_buffer,
+                               &light_buffer,
+    ]);
+
+    println!("{:#?}", program.bind_layouts());
+    println!("{:#?}", program.bind_groups());
+    
+    // Create pipeline from vertex, fragment shaders
+    let pipeline = unsafe { create_shader_program(&program, shader_string) };
 
     program.preloop(&mut |_| {
         println!("Called one time before the loop!");
@@ -93,7 +102,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 }
 fn main() {
     let event_loop = winit::event_loop::EventLoop::new();
-    let program = WGPUGraphics::new(800, 600, &event_loop);
+    let program = WGPUGraphics::new(1800, 1600, &event_loop);
 
     run_loop(program, event_loop);
 }

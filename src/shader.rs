@@ -1,4 +1,5 @@
 use crate::graphics::Vertex;
+use crate::texture;
 use crate::wgpu_program::WGPUGraphics;
 fn compile_wgsl(name: &str, source: &str, device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -34,14 +35,14 @@ pub unsafe fn create_shader_program(
                 bind_group_layouts: &program.bind_layouts().as_slice(),
                 push_constant_ranges: &[],
             });
-    create_render_pipeline(program, pipeline_layout, shader_module, None)
+    create_render_pipeline(program, pipeline_layout, shader_module)
 }
 
 fn create_render_pipeline(
     program: &WGPUGraphics,
     pipeline_layout: wgpu::PipelineLayout,
     shader_module: wgpu::ShaderModule,
-    depth_format: Option<wgpu::TextureFormat>,
+    // depth_format: Option<wgpu::TextureFormat>,
 ) -> wgpu::RenderPipeline {
     program
         .device()
@@ -79,8 +80,8 @@ fn create_render_pipeline(
                 conservative: false,
             },
             // depth_stencil: depth_format,
-            depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
-                format,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
@@ -107,6 +108,5 @@ fn light_shader_program(program: &WGPUGraphics, shader_source: &str) -> wgpu::Re
         program,
         layout,
         compile_wgsl("Light Shader", shader_source, program.device()),
-        None,
     )
 }

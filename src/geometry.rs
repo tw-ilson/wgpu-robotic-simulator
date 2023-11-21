@@ -20,10 +20,14 @@ pub struct TriMesh {
     faces: Vec<Triangle>,
 }
 
+#[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Transform {
-    tmatrix: glm::Mat4x4,
+    tmatrix: glm::Mat4,
 }
+unsafe impl bytemuck::Pod for Transform {}
+unsafe impl bytemuck::Zeroable for Transform {}
+
 impl Default for Transform {
     fn default() -> Self {
         Self { tmatrix: glm::Mat4x4::identity() }
