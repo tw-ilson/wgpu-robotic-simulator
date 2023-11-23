@@ -47,8 +47,9 @@ fn vs_main(
     var out: VertexOutput;
     out.color = model.color;
     out.world_normal = model.normal;
-    out.world_position = model.position;
-    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
+    
+    out.world_position = (transform.tmatrix * vec4<f32>(model.position, 1.0)).xyz;
+    out.clip_position = camera.view_proj * vec4<f32>(out.world_position, 1.0);
     return out;
 }
 

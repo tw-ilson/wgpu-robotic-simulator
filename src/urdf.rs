@@ -1,7 +1,7 @@
-use crate::geometry::{BoxMesh, CylinderMesh, MeshType, Polyhedron, TriMesh};
+use crate::geometry::{BoxMesh, CylinderMesh, Polyhedron, TriMesh};
 use glm;
 use std::str::FromStr;
-use xml::reader::{Events, XmlEvent, XmlEvent::*};
+use xml::reader::{XmlEvent, XmlEvent::*};
 use xml::EventReader;
 
 #[derive(Default, Debug, Copy, Clone)]

@@ -1,76 +1,37 @@
 use crate::{
     texture::Texture,
+    bindings::*,
     camera::{Camera, CameraController, CameraUniform},
     light::{Light, LightUniform},
     graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram, Vertex}, 
-    geometry::Polyhedron,
+    geometry::{Transform, Polyhedron, MeshBuffer, DrawMeshBuffer},
 };
+use itertools::Itertools;
 use bytemuck::{cast_slice, Pod, Zeroable};
 use std::collections::HashMap;
-use itertools::izip;
-use wgpu::{util::DeviceExt, Device, Surface, StoreOp};
-use winit::{dpi::PhysicalSize, event_loop::{EventLoop, }, event::WindowEvent, window::{Window, WindowBuilder}};
+// use rayon::prelude::*;
+use winit::{dpi::PhysicalSize, event_loop::EventLoop, event::WindowEvent, window::{Window, WindowBuilder}};
 
 pub struct WGPUState {
-    size: winit::dpi::PhysicalSize<u32>,
-    instance: wgpu::Instance,
-    adapter: wgpu::Adapter,
-    device: wgpu::Device,
-    surface: wgpu::Surface,
-    queue: wgpu::Queue,
-    // pipeline: Option<wgpu::RenderPipeline>,
-    config: wgpu::SurfaceConfiguration,
-    camera: Camera,
-    camera_controller: CameraController,
-    camera_uniform: CameraUniform,
-    light: Light,
-    light_uniform: LightUniform,
-    depth_texture: Texture,
-    bindings: Bindings, 
-    num_vertices: u32,
-    num_indices: u32,
-}
-// [camera, light] 
-struct Bindings {
-    names: Vec<String>,
-    bind_layouts: Vec<wgpu::BindGroupLayout>,
-    bind_groups: Vec<wgpu::BindGroup>,
-}
-impl Bindings {
-    fn new() -> Self {
-        Self { names: Vec::new(), bind_layouts: Vec::new(), bind_groups: Vec::new() }
-    }
-    fn new_bind_group_layout(&mut self, name: &str, device: &wgpu::Device) {
-        self.names.push(name.to_string());
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some(&(name.to_string() + "_layout")),
-            });
-        self.bind_layouts.push(bind_group_layout);
-    }
-    pub fn create_bind_groups(&mut self, device: &wgpu::Device, buffers: &[&wgpu::Buffer]) {
-        assert!(buffers.len() == self.bind_layouts.len());
-        for (name, layout, buffer) in izip!(self.names.iter(), self.bind_layouts.iter(), buffers) {
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
-                label: Some(name),
-            });
-            self.bind_groups.push(bind_group);
-        }
-    }
+    // Device Configuration state
+    pub size: winit::dpi::PhysicalSize<u32>,
+    pub instance: wgpu::Instance,
+    pub adapter: wgpu::Adapter,
+    pub device: wgpu::Device,
+    pub surface: wgpu::Surface,
+    pub queue: wgpu::Queue,
+    pub config: wgpu::SurfaceConfiguration,
+    pub depth_texture: Texture,
+
+    // Runtime state
+    pub camera: Camera,
+    pub camera_controller: CameraController,
+    pub camera_uniform: CameraUniform,
+    pub light: Light,
+    pub light_uniform: LightUniform,
+    pub bindings: Bindings, 
+    // num_vertices: u32,
+    // num_indices: u32,
 }
 
 fn retrieve_adapter_device(
@@ -108,6 +69,7 @@ fn retrieve_adapter_device(
     };
     futures::executor::block_on(device_fut)
 }
+
 impl Vertex {
     // needs to be changed if Vertex is changed.
     const ATTRIBS: [wgpu::VertexAttribute; 3] =
@@ -124,31 +86,6 @@ impl Vertex {
     }
 }
 
-pub struct VAO {
-    n_indices: u32,
-    vertex_buffer: wgpu::Buffer, 
-    index_buffer: wgpu::Buffer,
-}
-
-// not a big fan of this
-pub trait DrawMesh<'a> {
-    fn draw_mesh(&mut self, vao: &'a VAO, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup) ;
-    fn draw_mesh_list(&mut self, vao_list: &'a Vec<VAO>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup) ;
-}
-impl <'a, 'b> DrawMesh<'b> for wgpu::RenderPass<'a> where 'b: 'a {
-    fn draw_mesh(&mut self, vao: &'b VAO, camera_bind_group: &'b wgpu::BindGroup, light_bind_group: &'b wgpu::BindGroup) {
-        self.set_bind_group(0, &camera_bind_group, &[]);
-        self.set_bind_group(1, &light_bind_group, &[]);
-        self.set_vertex_buffer(0, vao.vertex_buffer.slice(..));
-        self.set_index_buffer(vao.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        self.draw_indexed(0..vao.n_indices, 0, 0..1);
-    }
-    fn draw_mesh_list(&mut self, vao_list: &'a Vec<VAO>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup) {
-        for vao in vao_list {
-            self.draw_mesh(vao, camera_bind_group, light_bind_group)
-        }
-    }
-}
 
 #[allow(dead_code)]
 pub type WGPUGraphics = GraphicsContext<WGPUState, Window, wgpu::Buffer>;
@@ -163,8 +100,8 @@ impl WGPUGraphics {
     pub fn adapter(&self) -> &wgpu::Adapter {
         &self.backend.adapter
     }
-    pub fn device(&self) -> &wgpu::Device {
-        &self.backend.device
+    pub fn device(&mut self) -> &mut wgpu::Device {
+        &mut self.backend.device
     }
     pub fn surface(&self) -> &wgpu::Surface {
         &self.backend.surface
@@ -175,21 +112,18 @@ impl WGPUGraphics {
     pub fn config(&self) -> &wgpu::SurfaceConfiguration {
         &self.backend.config
     }
-    pub fn n_vert(&self) -> u32 {
-        self.backend.num_vertices
-    }
-    pub fn n_indices(&self) -> u32 {
-        self.backend.num_indices
-    }
     pub fn camera(&mut self) -> &mut Camera {
         &mut self.backend.camera 
     }
     pub fn camera_controller(&mut self) -> &mut CameraController {
         &mut self.backend.camera_controller
     }
-    pub fn bind_layouts(&self) -> Vec<&wgpu::BindGroupLayout> {
-        self.backend.bindings.bind_layouts.iter().collect()
+    pub fn bindings(&mut self) -> &mut Bindings {
+        &mut self.backend.bindings
     }
+    // pub fn bind_layouts(&self) -> Vec<&wgpu::BindGroupLayout> {
+    //     self.backend.bindings.bind_layouts.iter().collect()
+    // }
     pub fn bind_groups(&self) -> Vec<&wgpu::BindGroup> {
         self.backend.bindings.bind_groups.iter().collect()
     }
@@ -199,9 +133,8 @@ impl WGPUGraphics {
     pub fn light_bind_group(&self) -> &wgpu::BindGroup {
         &self.backend.bindings.bind_groups[1]
     }
-    pub fn create_bind_groups(&mut self, buffers: &[&wgpu::Buffer]) {
-        let device = &self.backend.device;
-        self.backend.bindings.create_bind_groups(device, buffers);
+    pub fn transform_bind_group(&self) -> &wgpu::BindGroup {
+        &self.backend.bindings.bind_groups[2]
     }
 
     // helpers to create buffers
@@ -211,8 +144,9 @@ impl WGPUGraphics {
         data: &[T],
         usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer {
-        let buffer = self
-            .device()
+        use wgpu::util::DeviceExt;
+        let buffer = self.backend
+            .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(name),
                 contents: cast_slice(data),
@@ -221,35 +155,27 @@ impl WGPUGraphics {
         // self.attr_map.insert(String::from(name), buffer);
         buffer
     }
-    pub fn create_vertex_buffer(&mut self, vertices: Vec<Vertex>) -> wgpu::Buffer {
-        self.backend.num_vertices = vertices.len() as u32;
+    pub fn create_vertex_buffer(&mut self, vertices: &Vec<Vertex>) -> wgpu::Buffer {
+        // self.backend.num_vertices = vertices.len() as u32;
         self.create_buffer(
             "Vertex Buffer",
             vertices.as_slice(),
             wgpu::BufferUsages::VERTEX,
         )
     }
-    pub fn create_index_buffer(&mut self, indices: Vec<u16>) -> wgpu::Buffer {
-        self.backend.num_indices = indices.len() as u32;
+    pub fn create_index_buffer(&mut self, indices: &Vec<u16>) -> wgpu::Buffer {
+        // self.backend.num_indices = indices.len() as u32;
         self.create_buffer(
             "Index Buffer",
             indices.as_slice(),
             wgpu::BufferUsages::INDEX,
         )
     }
-    pub fn update_camera(&mut self, camera_buffer: &wgpu::Buffer) {
-        self.backend.camera_controller.update(&mut self.backend.camera);
-        self.backend.camera.update_view_proj(&mut self.backend.camera_uniform);
-        // self.backend.queue.write_buffer(camera_buffer, 0, bytemuck::cast_slice(&[self.backend.camera_uniform]));
-        self.assign_uniform(camera_buffer, self.backend.camera_uniform);
+    pub fn assign_uniform<T: Zeroable + Pod>(&self, buffer: &wgpu::Buffer, data: T) {
+        self.backend.queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[data]));
     }
-    pub fn process_keyboard(&mut self, event: &WindowEvent) -> bool{
-        self.backend.camera_controller.process_keyboard(event)
-    }
-    pub fn mouse_look(&mut self, mouse_x: f32, mouse_y: f32) {
-        self.backend.camera_controller.mouse_look(
-            &mut self.backend.camera, mouse_x, mouse_y)
-    }
+
+    // Camera
     pub fn create_camera_buffer(&mut self) -> wgpu::Buffer {
         self.backend.camera.update_view_proj(&mut self.backend.camera_uniform);
         self.create_buffer(
@@ -258,31 +184,48 @@ impl WGPUGraphics {
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         )
     }
+    pub fn update_camera(&mut self, camera_buffer: &wgpu::Buffer) {
+        self.backend.camera_controller.update(&mut self.backend.camera);
+        self.backend.camera.update_view_proj(&mut self.backend.camera_uniform);
+    }
+    pub fn process_keyboard(&mut self, event: &WindowEvent) -> bool{
+        self.backend.camera_controller.process_keyboard(event)
+    }
+    pub fn mouse_look(&mut self, mouse_x: f32, mouse_y: f32) {
+        self.backend.camera_controller.mouse_look(
+            &mut self.backend.camera, mouse_x, mouse_y)
+    }
+    
 
     //Lights
     pub fn create_light_buffer(&mut self) -> wgpu::Buffer {
-        self.create_buffer("Light VB" , &[self.backend.light.uniform], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
+        self.create_buffer(
+            "Light Buffer",
+            &[self.backend.light.uniform],
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
     }
 
     pub fn update_light(&mut self, light_buffer: &wgpu::Buffer) {
         // self.backend.light_uniform.update();
         self.backend.light_uniform.set(self.backend.camera.get_eye_posn());
-        self.assign_uniform(light_buffer, self.backend.light_uniform);
     }
 
-    pub fn assign_uniform<T: Zeroable + Pod>(&mut self, buffer: &wgpu::Buffer, data: T) {
-        self.backend.queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[data]));
+    // Mesh
+    pub fn create_transform_buffer(&mut self, mesh_list: &Vec<Polyhedron>) -> wgpu::Buffer {
+        self.create_buffer(
+            "Transform Buffer",
+            mesh_list.iter().map(|mesh| mesh.transform).collect_vec().as_slice(),
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
     }
-
-    pub fn create_vao(&mut self, poly: Polyhedron) -> VAO {
-        VAO {
-            n_indices: poly.indices.len() as u32,
-            vertex_buffer: self.create_vertex_buffer(poly.verts),
-            index_buffer: self.create_index_buffer(poly.indices)
+    pub fn create_mesh_buffer(&mut self, poly: &Polyhedron) -> MeshBuffer {
+        MeshBuffer {
+            n_indices: poly.indices().len() as u32,
+            vertex_buffer: self.create_vertex_buffer(&poly.verts),
+            index_buffer: self.create_index_buffer(&poly.indices),
         }
     }
 
-    pub fn draw(&mut self, pipeline: &wgpu::RenderPipeline, vao_list: &Vec<VAO>) {
+    pub fn draw_mesh_list(&mut self, pipeline: &wgpu::RenderPipeline, buffer_list: &Vec<MeshBuffer>, mesh_list: &Vec<Polyhedron>, camera_buffer: &wgpu::Buffer, light_buffer: &wgpu::Buffer, transform_buffer: &wgpu::Buffer) {
         self.set_clear_color((1.0, 1.0, 0.0, 1.0));
         let output = self
             .backend.surface
@@ -320,7 +263,11 @@ impl WGPUGraphics {
                     timestamp_writes: None,
                 });
             render_pass.set_pipeline(pipeline);
-            render_pass.draw_mesh_list(&vao_list, self.camera_bind_group(), self.light_bind_group());
+            self.assign_uniform(camera_buffer, self.backend.camera_uniform);
+            self.assign_uniform(light_buffer, self.backend.light_uniform);
+            // self.assign_uniform(transform_buffer, mesh.transform);
+
+            render_pass.draw_mesh_list(&buffer_list, self.camera_bind_group(), self.light_bind_group(), self.transform_bind_group())
         }
         self.queue().submit(std::iter::once(encoder.finish()));
         output.present();
@@ -330,7 +277,9 @@ impl WGPUGraphics {
     pub fn new(width: u32, height: u32, event: &EventLoop<()>) -> Self {
         // let window = Window::new(event).expect("unable to create winit window");
         let window = WindowBuilder::new().build(event).expect("unable to create winit window");
-        window.set_cursor_grab(winit::window::CursorGrabMode::Locked).unwrap();
+        if window.set_cursor_grab(winit::window::CursorGrabMode::Locked).is_err() {
+
+        }
         window.set_cursor_visible(false);
 
         // #[cfg(target_arch = "wasm32")]
@@ -387,17 +336,12 @@ impl WGPUGraphics {
 
         let camera = Camera::new(width, height);
         let camera_controller = CameraController::default();
-        // let camera_buffer = program.create_camera_buffer();
+        let camera_uniform = CameraUniform::new();
         let light = Light::new(None);
 
-        let camera_uniform = CameraUniform::new();
         let light_uniform = LightUniform::new();
 
         let mut bindings = Bindings::new();
-
-        // bindings.new_bind_group_layout("transform_bind_group", &device);
-        bindings.new_bind_group_layout("camera_bind_group", &device);
-        bindings.new_bind_group_layout("light_bind_group", &device);
 
         let mut program = Self {
             attr_map: HashMap::new(),
@@ -420,8 +364,6 @@ impl WGPUGraphics {
                 light_uniform,
                 depth_texture,
                 bindings,
-                num_vertices: 0,
-                num_indices: 0,
             },
             flags: ContextFlags {
                 quit_loop: false,
@@ -446,6 +388,6 @@ impl GraphicsProgram for WGPUGraphics {
     fn get_backend_info(&self) {
     }
     fn default_state(&mut self) {
-        self.backend.surface.configure(self.device(), self.config());
+        // self.backend.surface.configure(self.device(), self.config());
     }
 }

@@ -1,8 +1,10 @@
-use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, Transform};
+use std::f32::consts::PI;
+
+use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, MeshBuffer};
 use physics_engine::wgpu_program::WGPUGraphics;
-use physics_engine::graphics::{GraphicsProgram};
-use physics_engine::shader::create_shader_program;
-use nalgebra_glm as glm;
+use physics_engine::graphics::GraphicsProgram;
+use physics_engine::shader::CompilePipeline;
+use physics_engine::bindings::*;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -13,36 +15,33 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
     program.get_backend_info();
 
-    // let mut mesh = Mesh::from(MeshType::STL(String::from(include_str!())));
-    let box_mesh = Polyhedron::from(TriMesh::create_box([1.,1.,1.].into()));
-    let cylinder_mesh = Polyhedron::from(TriMesh::create_cylinder(1., 2., 30));
-    // box_mesh.transform;
+    let mut box_mesh = Polyhedron::from(TriMesh::create_box([1.,1.,1.].into()));
+    let mut cylinder_mesh = Polyhedron::from(TriMesh::create_cylinder(1., 2., 30));
+    box_mesh.transform.rotate_rpy([PI/4., 0., 0.].into());
+    cylinder_mesh.transform.translate([0.,-1., 0.].into());
 
-    // let mut poly = Polyhedron::from_file("../assets/mesh/stl.stl");
-    // poly.calculate_normals();
-    // poly.rotate(-glm::pi::<f32>()/2., [1.,0.,0.].into());
 
     // Create buffers
-    let vao_list = vec![
-        program.create_vao(cylinder_mesh),
-        program.create_vao(box_mesh), 
-    ];
+    let mesh_list = vec![box_mesh, cylinder_mesh];
+    let buffer_list:Vec<MeshBuffer> = mesh_list.iter().map(|mesh| program.create_mesh_buffer(mesh)).collect();
 
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();
     let light_buffer = program.create_light_buffer();
-    let transform_buffer = program.create_buffer("transform_buffer" , &[Transform::default()], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+    let transform_buffer = program.create_transform_buffer(&mesh_list);
+
+    program.new_bind_group_layout("camera_bind_group", &[uniform_layout_entry()]);
+    program.new_bind_group_layout("light_bind_group", &[uniform_layout_entry()]);
+    program.new_bind_group_layout("transform_bind_group", &[uniform_array_layout_entry(mesh_list.len(), true)]);
     program.create_bind_groups(&[
-                               // &transform_buffer,
                                &camera_buffer,
                                &light_buffer,
+                               &transform_buffer,
     ]);
 
-    println!("{:#?}", program.bind_layouts());
-    println!("{:#?}", program.bind_groups());
     
     // Create pipeline from vertex, fragment shaders
-    let pipeline = unsafe { create_shader_program(&program, shader_string) };
+    let pipeline = program.create_shader_program(shader_string);
 
     program.preloop(&mut |_| {
         println!("Called one time before the loop!");
@@ -85,24 +84,23 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                 program.update(&mut |p| {
                     p.update_camera(&camera_buffer);
                     p.update_light(&light_buffer);
+                    // p.update_mesh_list(&buffer_list, &mesh_list);
                 });
 
                 // RENDER
                 program.render(&mut |p| {
-                    p.draw(&pipeline, &vao_list);
-
+                    p.draw_mesh_list(&pipeline, &buffer_list, &mesh_list, &camera_buffer, &light_buffer, &transform_buffer);
                     // submit will accept anything that implements IntoIter
                 });
             }
             Event::MainEventsCleared => program.window.request_redraw(),
-
             _ => {}
         }
     });
 }
 fn main() {
     let event_loop = winit::event_loop::EventLoop::new();
-    let program = WGPUGraphics::new(1800, 1600, &event_loop);
+    let program = WGPUGraphics::new(1240, 860, &event_loop);
 
     run_loop(program, event_loop);
 }

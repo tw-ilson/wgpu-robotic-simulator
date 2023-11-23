@@ -1,8 +1,7 @@
 use crate::graphics::Vertex;
 use itertools::Itertools;
-use std::{
-    convert::{From, Into},
-};
+use rayon::prelude::*;
+use std::convert::{From, Into};
 
 #[derive(Debug, Clone)]
 pub struct Triangle {
@@ -48,33 +47,34 @@ impl std::ops::Sub<Transform> for Transform {
 }
 
 impl Transform {
-    fn new(xyz: glm::Vec3, rpy: glm::Vec3) -> Self {
+    pub fn new(xyz: glm::Vec3, rpy: glm::Vec3) -> Self {
         let mut t = Self::default();
         t.rotate_rpy(rpy);
         t.translate(xyz);
         t
     }
-    fn rotate_rpy(&mut self, rpy: glm::Vec3) {
-        self.tmatrix += glm::rotate_x(&self.tmatrix, rpy[0]);
-        self.tmatrix += glm::rotate_y(&self.tmatrix, rpy[1]);
-        self.tmatrix += glm::rotate_z(&self.tmatrix, rpy[2]);
+    pub fn rotate_rpy(&mut self, rpy: glm::Vec3) {
+        self.tmatrix = glm::rotate_x(&self.tmatrix, rpy[0]);
+        self.tmatrix = glm::rotate_y(&self.tmatrix, rpy[1]);
+        self.tmatrix = glm::rotate_z(&self.tmatrix, rpy[2]);
     }
-    fn rotate(&mut self, axis: glm::Vec3, angle: f32) {
-        self.tmatrix += glm::rotate(&self.tmatrix, angle, &axis);
+    pub fn rotate(&mut self, axis: glm::Vec3, angle: f32) {
+        self.tmatrix = glm::rotate(&self.tmatrix, angle, &axis);
     }
-    fn translate(&mut self, xyz: glm::Vec3) {
-        self.tmatrix += glm::translate(&self.tmatrix, &xyz);
+    pub fn translate(&mut self, xyz: glm::Vec3) {
+        self.tmatrix = glm::translate(&self.tmatrix, &xyz);
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Polyhedron {
-    transform: Transform,
+    pub transform: Transform,
     pub verts: Vec<Vertex>,
     pub indices: Vec<u16>,
 }
 
 impl TriMesh {
+   
     pub fn add_triangle(&mut self, v: [glm::Vec3; 3]) {
         self.faces.push(Triangle {
             vertices: [v[0].into(), v[1].into(), v[2].into()],
@@ -217,6 +217,7 @@ impl From<MeshType> for TriMesh {
     fn from(mesh_type: MeshType) -> Self {
         match mesh_type {
             MeshType::STL(fname) => {
+                println!("{}", fname);
                 parse_stl(std::fs::read_to_string(fname).expect("could not read file"))
             }
             // OBJ(fstring) -> parse_obj(fstring),
@@ -237,10 +238,16 @@ impl Default for Polyhedron {
 }
 
 impl Polyhedron {
+    pub fn verts(&self) -> &Vec<Vertex> {
+        &self.verts
+    }
+    pub fn indices(&self) -> &Vec<u16> {
+        &self.indices
+    }
     pub fn from_fast(mesh: TriMesh) -> Self {
         Self {
             transform: Transform::default(),
-            verts: mesh.faces.iter().flat_map(|tri| tri.vertices).collect(),
+            verts: mesh.faces.par_iter().flat_map(|tri| tri.vertices).collect(),
             indices: (0..mesh.faces.len() as u16)
                 .flat_map(|fi| {
                     let k: u16 = fi * 3;
@@ -253,9 +260,7 @@ impl Polyhedron {
     //
     // }
     pub fn scale(&mut self, factor: f32) {
-        for v in self.verts.iter_mut() {
-            (*v).position *= factor;
-        }
+        self.verts.par_iter_mut().for_each(|v| (*v).position *= factor)
     }
 }
 
@@ -278,9 +283,10 @@ impl From<TriMesh> for Polyhedron {
             .flat_map(|tri| tri.vertices.iter().cloned())
             .dedup()
             .collect_vec();
+
         let indices: Vec<u16> = mesh
             .faces
-            .iter()
+            .par_iter()
             .flat_map(|tri| {
                 let mut indices: Vec<u16> = Vec::new();
                 for i in 0..3 {
@@ -293,11 +299,37 @@ impl From<TriMesh> for Polyhedron {
                 indices
             })
             .collect();
-        let mut poly = Self {
+        let poly = Self {
             transform: Transform::default(),
             verts,
             indices,
         };
         poly
+    }
+}
+
+pub struct MeshBuffer {
+    pub n_indices: u32,
+    pub vertex_buffer: wgpu::Buffer, 
+    pub index_buffer: wgpu::Buffer,
+}
+
+pub trait DrawMeshBuffer<'a> {
+    fn draw_mesh(&mut self, vao: &'a MeshBuffer, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup, transform_index: u32) ;
+    fn draw_mesh_list(&mut self, vao_list: &'a Vec<MeshBuffer>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup) ;
+}
+impl <'a, 'b> DrawMeshBuffer<'b> for wgpu::RenderPass<'a> where 'b: 'a {
+    fn draw_mesh(&mut self, vao: &'b MeshBuffer, camera_bind_group: &'b wgpu::BindGroup, light_bind_group: &'b wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup, transform_index: u32) {
+        self.set_bind_group(0, &camera_bind_group, &[]);
+        self.set_bind_group(1, &light_bind_group, &[]);
+        self.set_bind_group(2, &transform_bind_group, &[transform_index]);
+        self.set_vertex_buffer(0, vao.vertex_buffer.slice(..));
+        self.set_index_buffer(vao.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        self.draw_indexed(0..vao.n_indices, 0, 0..1);
+    }
+    fn draw_mesh_list(&mut self, vao_list: &'a Vec<MeshBuffer>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup) {
+        for (i, buffer) in vao_list.iter().enumerate() {
+            self.draw_mesh(buffer, camera_bind_group, light_bind_group, transform_bind_group, i as u32);
+        }
     }
 }

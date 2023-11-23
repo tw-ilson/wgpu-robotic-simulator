@@ -1,52 +1,67 @@
+use crate::bindings::*;
 use crate::graphics::Vertex;
 use crate::texture;
 use crate::wgpu_program::WGPUGraphics;
-fn compile_wgsl(name: &str, source: &str, device: &wgpu::Device) -> wgpu::ShaderModule {
-    device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(name),
-        source: wgpu::ShaderSource::Wgsl(source.into()),
-    })
-}
-fn compile_glsl(
-    source: &str,
-    device: &wgpu::Device,
-    stage: Option<wgpu::naga::ShaderStage>,
-) -> wgpu::ShaderModule {
-    device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(&format!("{:?}", stage)),
-        source: wgpu::ShaderSource::Glsl {
-            shader: source.into(),
-            stage: stage.expect("Shader type must be defined for GLSL"),
-            defines: naga::FastHashMap::default(),
-        },
-    })
+use itertools::Itertools;
+
+pub trait CompilePipeline {
+    fn compile_wgsl(&mut self, name: &str, source: &str) -> wgpu::ShaderModule;
+    fn compile_glsl(&mut self,source: &str,stage: Option<wgpu::naga::ShaderStage>,
+    ) -> wgpu::ShaderModule;
+    fn create_shader_program(&mut self, shader_source: &str) -> wgpu::RenderPipeline;
+    fn create_render_pipeline(
+        &mut self,
+        pipeline_layout: wgpu::PipelineLayout,
+        shader_module: wgpu::ShaderModule,
+    ) -> wgpu::RenderPipeline;
 }
 
-pub unsafe fn create_shader_program(
-    program: &WGPUGraphics,
-    shader_source: &str,
-) -> wgpu::RenderPipeline {
-    let shader_module = compile_wgsl("vertex/fragment shader", shader_source, program.device());
-    let pipeline_layout =
-        program
-            .device()
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &program.bind_layouts().as_slice(),
-                push_constant_ranges: &[],
-            });
-    create_render_pipeline(program, pipeline_layout, shader_module)
-}
+impl CompilePipeline for WGPUGraphics {
+    fn compile_wgsl(&mut self, name: &str, source: &str) -> wgpu::ShaderModule {
+        self.device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(name),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            })
+    }
+    fn compile_glsl(
+        &mut self,
+        source: &str,
+        stage: Option<wgpu::naga::ShaderStage>,
+    ) -> wgpu::ShaderModule {
+        self.device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(&format!("{:?}", stage)),
+                source: wgpu::ShaderSource::Glsl {
+                    shader: source.into(),
+                    stage: stage.expect("Shader type must be defined for GLSL"),
+                    defines: naga::FastHashMap::default(),
+                },
+            })
+    }
 
-fn create_render_pipeline(
-    program: &WGPUGraphics,
-    pipeline_layout: wgpu::PipelineLayout,
-    shader_module: wgpu::ShaderModule,
-    // depth_format: Option<wgpu::TextureFormat>,
-) -> wgpu::RenderPipeline {
-    program
-        .device()
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    fn create_shader_program(
+        &mut self,
+        shader_source: &str,
+    ) -> wgpu::RenderPipeline {
+        let shader_module = self.compile_wgsl("vertex/fragment shader", shader_source);
+        let bind_group_layouts: Vec<&wgpu::BindGroupLayout> =
+            self.backend.bindings.bind_layouts.as_slice().iter().collect();
+        let pipeline_layout_desc = &wgpu::PipelineLayoutDescriptor {
+            label: Some("Render Pipeline Layout"),
+            bind_group_layouts: bind_group_layouts.as_slice(),
+            push_constant_ranges: &[],
+        };
+        let pipeline_layout = self.backend.device.create_pipeline_layout(&pipeline_layout_desc);
+        self.create_render_pipeline(pipeline_layout, shader_module)
+    }
+
+    fn create_render_pipeline(
+        &mut self,
+        pipeline_layout: wgpu::PipelineLayout,
+        shader_module: wgpu::ShaderModule,
+    ) -> wgpu::RenderPipeline {
+        self.backend.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -58,7 +73,7 @@ fn create_render_pipeline(
                 module: &shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: program.config().format,
+                    format: self.config().format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent::REPLACE,
                         alpha: wgpu::BlendComponent::REPLACE,
@@ -94,19 +109,5 @@ fn create_render_pipeline(
             },
             multiview: None,
         })
-}
-
-fn light_shader_program(program: &WGPUGraphics, shader_source: &str) -> wgpu::RenderPipeline {
-    let layout = program
-        .device()
-        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Light Pipeline Layout"),
-            bind_group_layouts: &program.bind_layouts().as_slice(),
-            push_constant_ranges: &[],
-        });
-    create_render_pipeline(
-        program,
-        layout,
-        compile_wgsl("Light Shader", shader_source, program.device()),
-    )
+    }
 }

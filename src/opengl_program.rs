@@ -1,6 +1,5 @@
 
-use crate::graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram};
-use crate::util::print_type_of;
+// use crate::graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram};
 extern crate gl;
 extern crate sdl2;
 use gl::types::*;
@@ -16,7 +15,7 @@ pub struct SDLContext {
     pub gl_context: GLContext,
 }
 
-pub type GLGraphics = GraphicsContext<SDLContext, Window, GLuint>;
+// pub type GLGraphics = GraphicsContext<SDLContext, Window, GLuint>;
 impl GLGraphics {
     pub unsafe fn create_shader_program(
         &mut self,
@@ -94,11 +93,11 @@ impl GLGraphics {
     pub fn new(width: u32, height: u32) -> Self {
         let sdl_context = match sdl2::init() {
             Ok(sdl) => sdl,
-            Err(e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
+            Err(_e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
         };
         let video_subsystem = Box::new(match sdl_context.video() {
             Ok(video_subsystem) => video_subsystem,
-            Err(e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
+            Err(_e) => panic!("Failed to initialize SDL!\n{}", sdl2::get_error()),
         });
         let attrs = video_subsystem.gl_attr();
         attrs.set_context_major_version(4);

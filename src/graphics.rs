@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 // use std::hash::{Hash, Hasher};
-use std::cell::RefCell;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq)]

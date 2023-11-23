@@ -39,7 +39,7 @@ pub struct Camera {
 impl Camera {
     pub fn new(w: u32, h: u32) -> Self {
         // println!("Created a Camera");
-        let mut new_camera = Self {
+        let new_camera = Self {
             eye_posn: glm::vec3(0.0, 0.0, 2.0),
             view_direction: glm::vec3(0.0, 0.0, -1.0),
             up_vector: glm::vec3(0.0, 1.0, 0.0),
@@ -99,7 +99,6 @@ impl CameraController {
         match event {
             WindowEvent::MouseInput {
                 button: winit::event::MouseButton::Left,
-                state,
                 ..
             } => {
                 // self.mouse_pressed = *state == ElementState::Pressed;
