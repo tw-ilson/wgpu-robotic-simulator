@@ -53,7 +53,7 @@ fn retrieve_adapter_device(
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty(),
+                    features: wgpu::Features::empty() | wgpu::Features::BUFFER_BINDING_ARRAY,
                     // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                     limits: if cfg!(target_arch = "wasm32") {
                         wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
@@ -171,8 +171,8 @@ impl WGPUGraphics {
             wgpu::BufferUsages::INDEX,
         )
     }
-    pub fn assign_uniform<T: Zeroable + Pod>(&self, buffer: &wgpu::Buffer, data: T) {
-        self.backend.queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[data]));
+    pub fn assign_uniform<T: Zeroable + Pod>(&self, buffer: &wgpu::Buffer, data: &[T]) {
+        self.backend.queue.write_buffer(buffer, 0, bytemuck::cast_slice(data));
     }
 
     // Camera
@@ -217,6 +217,7 @@ impl WGPUGraphics {
             mesh_list.iter().map(|mesh| mesh.transform).collect_vec().as_slice(),
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
     }
+
     pub fn create_mesh_buffer(&mut self, poly: &Polyhedron) -> MeshBuffer {
         MeshBuffer {
             n_indices: poly.indices().len() as u32,
@@ -263,9 +264,9 @@ impl WGPUGraphics {
                     timestamp_writes: None,
                 });
             render_pass.set_pipeline(pipeline);
-            self.assign_uniform(camera_buffer, self.backend.camera_uniform);
-            self.assign_uniform(light_buffer, self.backend.light_uniform);
-            // self.assign_uniform(transform_buffer, mesh.transform);
+            self.assign_uniform(camera_buffer, &[self.backend.camera_uniform]);
+            self.assign_uniform(light_buffer, &[self.backend.light_uniform]);
+            self.assign_uniform(transform_buffer, mesh_list.iter().map(|mesh|mesh.transform).collect_vec().as_slice());
 
             render_pass.draw_mesh_list(&buffer_list, self.camera_bind_group(), self.light_bind_group(), self.transform_bind_group())
         }
@@ -388,6 +389,6 @@ impl GraphicsProgram for WGPUGraphics {
     fn get_backend_info(&self) {
     }
     fn default_state(&mut self) {
-        // self.backend.surface.configure(self.device(), self.config());
+        self.backend.surface.configure(&self.backend.device, self.config());
     }
 }

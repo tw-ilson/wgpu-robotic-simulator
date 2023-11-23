@@ -22,10 +22,11 @@ mint = "0.5.9"
 naga = "0.13.0"
 nalgebra-glm = "0.18.0"
 rand = "0.8.5"
-wgpu = { version="0.18.0", features=["glsl"] }
+wgpu = { version="0.18.0", features=["glsl", "expose-ids"] }
 winit = "0.28.7"
 xml-rs = "0.8.19"
 anyhow = "1.0.75"
+rayon = "1.8.0"
 [dependencies.image]
 version = "0.24"
 default-features = false
