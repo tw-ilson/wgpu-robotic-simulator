@@ -41,7 +41,8 @@ impl Camera {
         // println!("Created a Camera");
         let new_camera = Self {
             eye_posn: glm::vec3(0.0, 0.0, 2.0),
-            view_direction: glm::vec3(0.0, 0.0, -1.0),
+            view_direction: 
+                glm::vec3(0.0, 0.0, -1.0),
             up_vector: glm::vec3(0.0, 1.0, 0.0),
             aspect: (w as f32) / (h as f32),
             fovy: 45.0,

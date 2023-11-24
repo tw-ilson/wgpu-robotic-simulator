@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, MeshBuffer};
+use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, MeshBuffer, PlaneMesh};
 use physics_engine::wgpu_program::WGPUGraphics;
 use physics_engine::graphics::GraphicsProgram;
 use physics_engine::shader::CompilePipeline;
@@ -15,14 +15,18 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
     program.get_backend_info();
 
-    let mut box_mesh = Polyhedron::from(TriMesh::create_box([1.,1.,1.].into()));
+    let mut box_mesh = Polyhedron::from(TriMesh::create_box([1.,1.,2.].into()));
     let mut cylinder_mesh = Polyhedron::from(TriMesh::create_cylinder(1., 2., 30));
-    box_mesh.transform.rotate_rpy([PI/4., 0., 0.].into());
-    cylinder_mesh.transform.translate([0.,-1., 0.].into());
-
+    let mut plane_mesh = Polyhedron::from(TriMesh::create_plane());
+    // plane_mesh.set_color([0.0, 1.0, 0.0].into());
+    // box_mesh.transform.rotate_rpy([PI/4., 0., 0.].into());
+    cylinder_mesh.transform.rotate_rpy([-1.5708, 0.,0.].into());
+    // box_mesh.update_base();
+    cylinder_mesh.update_base();
+    // let mesh = Polyhedron::from("assets/mesh/teapot.stl".to_owned());
 
     // Create buffers
-    let mesh_list = vec![box_mesh, cylinder_mesh];
+    let mesh_list = vec![cylinder_mesh, plane_mesh];
     let buffer_list:Vec<MeshBuffer> = mesh_list.iter().map(|mesh| program.create_mesh_buffer(mesh)).collect();
 
     //Initialize uniform buffers
@@ -32,7 +36,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
     program.new_bind_group_layout("camera_bind_group", &[uniform_layout_entry()]);
     program.new_bind_group_layout("light_bind_group", &[uniform_layout_entry()]);
-    program.new_bind_group_layout("transform_bind_group", &[uniform_array_layout_entry(mesh_list.len(), true)]);
+    program.new_bind_group_layout("transform_bind_group", &[uniform_layout_entry()]);
     program.create_bind_groups(&[
                                &camera_buffer,
                                &light_buffer,

@@ -53,7 +53,9 @@ fn retrieve_adapter_device(
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty() | wgpu::Features::BUFFER_BINDING_ARRAY,
+                    features: wgpu::Features::empty(), //| wgpu::Features::BUFFER_BINDING_ARRAY, //
+                                                       // Need to do the spatial transforms on
+                                                       // shader!
                     // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                     limits: if cfg!(target_arch = "wasm32") {
                         wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
@@ -100,7 +102,10 @@ impl WGPUGraphics {
     pub fn adapter(&self) -> &wgpu::Adapter {
         &self.backend.adapter
     }
-    pub fn device(&mut self) -> &mut wgpu::Device {
+    pub fn device(&self) -> &wgpu::Device {
+        &self.backend.device
+    }
+    pub fn device_mut(&mut self) -> &mut wgpu::Device {
         &mut self.backend.device
     }
     pub fn surface(&self) -> &wgpu::Surface {
@@ -121,9 +126,6 @@ impl WGPUGraphics {
     pub fn bindings(&mut self) -> &mut Bindings {
         &mut self.backend.bindings
     }
-    // pub fn bind_layouts(&self) -> Vec<&wgpu::BindGroupLayout> {
-    //     self.backend.bindings.bind_layouts.iter().collect()
-    // }
     pub fn bind_groups(&self) -> Vec<&wgpu::BindGroup> {
         self.backend.bindings.bind_groups.iter().collect()
     }
@@ -214,7 +216,8 @@ impl WGPUGraphics {
     pub fn create_transform_buffer(&mut self, mesh_list: &Vec<Polyhedron>) -> wgpu::Buffer {
         self.create_buffer(
             "Transform Buffer",
-            mesh_list.iter().map(|mesh| mesh.transform).collect_vec().as_slice(),
+            // mesh_list.iter().map(|mesh| mesh.transform).collect_vec().as_slice(),
+            &[Transform::default()],
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
     }
 
@@ -227,7 +230,7 @@ impl WGPUGraphics {
     }
 
     pub fn draw_mesh_list(&mut self, pipeline: &wgpu::RenderPipeline, buffer_list: &Vec<MeshBuffer>, mesh_list: &Vec<Polyhedron>, camera_buffer: &wgpu::Buffer, light_buffer: &wgpu::Buffer, transform_buffer: &wgpu::Buffer) {
-        self.set_clear_color((1.0, 1.0, 0.0, 1.0));
+        // self.set_clear_color((1.0, 1.0, 1.0, 1.0));
         let output = self
             .backend.surface
             .get_current_texture()
@@ -266,7 +269,7 @@ impl WGPUGraphics {
             render_pass.set_pipeline(pipeline);
             self.assign_uniform(camera_buffer, &[self.backend.camera_uniform]);
             self.assign_uniform(light_buffer, &[self.backend.light_uniform]);
-            self.assign_uniform(transform_buffer, mesh_list.iter().map(|mesh|mesh.transform).collect_vec().as_slice());
+            // self.assign_uniform(transform_buffer, mesh_list.iter().map(|mesh|mesh.transform).collect_vec().as_slice());
 
             render_pass.draw_mesh_list(&buffer_list, self.camera_bind_group(), self.light_bind_group(), self.transform_bind_group())
         }
@@ -342,7 +345,7 @@ impl WGPUGraphics {
 
         let light_uniform = LightUniform::new();
 
-        let mut bindings = Bindings::new();
+        let bindings = Bindings::new();
 
         let mut program = Self {
             attr_map: HashMap::new(),
@@ -387,6 +390,9 @@ impl WGPUGraphics {
 impl GraphicsProgram for WGPUGraphics {
     fn swap_window(&self) {}
     fn get_backend_info(&self) {
+        println!("Device features:\n{:#?}", self.device().features());
+        println!("Adapter info: \n{:#?}", self.adapter().get_info());
+        println!("Adapter features:\n{:#?}", self.adapter().features());
     }
     fn default_state(&mut self) {
         self.backend.surface.configure(&self.backend.device, self.config());

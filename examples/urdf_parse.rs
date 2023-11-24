@@ -1,9 +1,12 @@
-use physics_engine::urdf::RobotDescriptor;
-use physics_engine::geometry::{Polyhedron,TriMesh, CylinderMesh, BoxMesh};
+use std::f32::consts::PI;
+
+use physics_engine::urdf::*;
+use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, MeshBuffer};
 use physics_engine::wgpu_program::WGPUGraphics;
-use physics_engine::graphics::{GraphicsProgram};
-use physics_engine::shader::create_shader_program;
-use nalgebra_glm as glm;
+use physics_engine::graphics::GraphicsProgram;
+use physics_engine::shader::CompilePipeline;
+use physics_engine::bindings::*;
+use std::str::FromStr;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -11,23 +14,33 @@ use winit::{
 
 pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     let shader_string = include_str!("../shaders/shader.wgsl");
-    // let light_shader_string = include_str!("../shaders/light.wgsl");
-    
-    // Create pipeline from vertex, fragment shaders
-    let pipeline = unsafe { create_shader_program(&program, shader_string) };
-    // let light_pipeline = unsafe { create_shader_program(&program, light_shader_string) };
 
     program.get_backend_info();
 
+    let mut robot = RobotDescriptor::from_str(include_str!("../assets/xarm.urdf")).expect("unable to read urdf");
+    robot.build();
+
     // Create buffers
-    let poly = Polyhedron::from(TriMesh::create_box([1.,1.,1.].into()));
-    let vertex_buffer = program.create_vertex_buffer(poly.verts);
-    let index_buffer = program.create_index_buffer(poly.indices);
+    let mesh_list:Vec<_> = robot.links.iter().map(|link| link.geometry.clone()).collect();
+    let buffer_list:Vec<MeshBuffer> = mesh_list.iter().map(|mesh| program.create_mesh_buffer(mesh)).collect();
 
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();
     let light_buffer = program.create_light_buffer();
-    program.create_bind_groups(&[&camera_buffer, &light_buffer]);
+    let transform_buffer = program.create_transform_buffer(&vec![Polyhedron::default()]);
+
+    program.new_bind_group_layout("camera_bind_group", &[uniform_layout_entry()]);
+    program.new_bind_group_layout("light_bind_group", &[uniform_layout_entry()]);
+    program.new_bind_group_layout("transform_bind_group", &[uniform_layout_entry()]);
+    program.create_bind_groups(&[
+                               &camera_buffer,
+                               &light_buffer,
+                               &transform_buffer,
+    ]);
+
+    
+    // Create pipeline from vertex, fragment shaders
+    let pipeline = program.create_shader_program(shader_string);
 
     program.preloop(&mut |_| {
         println!("Called one time before the loop!");
@@ -70,71 +83,23 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                 program.update(&mut |p| {
                     p.update_camera(&camera_buffer);
                     p.update_light(&light_buffer);
+                    // p.update_mesh_list(&buffer_list, &mesh_list);
                 });
 
                 // RENDER
                 program.render(&mut |p| {
-                    // -> Result<(), wgpu::SurfaceError>
-                    p.set_clear_color((1.0, 1.0, 0.0, 1.0));
-                    let output = p
-                        .surface()
-                        .get_current_texture()
-                        .expect("failed to get current texture");
-                    let view = output
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
-                    let mut encoder =
-                        p.device()
-                            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                                label: Some("Render Encoder"),
-                            });
-                    {
-                        let mut render_pass =
-                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                label: Some("Render Pass"),
-                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                    view: &view,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                                            r: 0.1,
-                                            g: 0.2,
-                                            b: 0.3,
-                                            a: 1.0,
-                                        }),
-                                        store: wgpu::StoreOp::Store,
-                                    },
-                                })],
-                                depth_stencil_attachment: None,
-                                occlusion_query_set: None,
-                                timestamp_writes: None,
-                            });
-                        // render_pass.set_pipeline(&light_pipeline);
-                        // render_pass.draw_light_model
-                        render_pass.set_pipeline(&pipeline);
-                        render_pass.set_bind_group(0, p.camera_bind_group(), &[]);
-                        render_pass.set_bind_group(1, p.light_bind_group(), &[]);
-                        render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        render_pass
-                            .set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                        render_pass.draw_indexed(0..p.n_indices(), 0, 0..1);
-                    }
-
+                    p.draw_mesh_list(&pipeline, &buffer_list, &mesh_list, &camera_buffer, &light_buffer, &transform_buffer);
                     // submit will accept anything that implements IntoIter
-                    p.queue().submit(std::iter::once(encoder.finish()));
-                    output.present();
                 });
             }
             Event::MainEventsCleared => program.window.request_redraw(),
-
             _ => {}
         }
     });
 }
 fn main() {
-    let robot_result = RobotDescriptor::from_str(include_str!("../assets/03-origins.urdf"));
-    match robot_result {
-        Ok(robot) => println!("{:#?}", robot),
-        Err(e) => panic!("error parsing urdf {}", e),
-    }
+    let event_loop = winit::event_loop::EventLoop::new();
+    let program = WGPUGraphics::new(1240, 860, &event_loop);
+
+    run_loop(program, event_loop);
 }

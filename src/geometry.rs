@@ -2,8 +2,9 @@ use crate::graphics::Vertex;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::convert::{From, Into};
+use std::fmt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Triangle {
     pub vertices: [Vertex; 3],
 }
@@ -22,7 +23,7 @@ pub struct TriMesh {
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Transform {
-    tmatrix: glm::Mat4,
+    pub tmatrix: glm::Mat4,
 }
 unsafe impl bytemuck::Pod for Transform {}
 unsafe impl bytemuck::Zeroable for Transform {}
@@ -32,7 +33,18 @@ impl Default for Transform {
         Self { tmatrix: glm::Mat4x4::identity() }
     }
 }
-
+impl std::ops::Mul<Vertex> for Transform {
+    type Output = Vertex;
+    fn mul(self, rhs:Vertex) -> Self::Output {
+        Vertex { position: (self.tmatrix * glm::vec4(rhs.position.x, rhs.position.y, rhs.position.z, 1.0)).xyz(), normal: rhs.normal, color: rhs.color }
+    }
+}
+impl std::ops::Mul<Transform> for Transform {
+    type Output = Transform;
+    fn mul(self, rhs: Transform) -> Self::Output {
+        Transform { tmatrix: self.tmatrix * rhs.tmatrix }
+    }
+}
 impl std::ops::Add<Transform> for Transform {
     type Output = Transform;
     fn add(self, rhs: Transform) -> Self::Output {
@@ -49,8 +61,8 @@ impl std::ops::Sub<Transform> for Transform {
 impl Transform {
     pub fn new(xyz: glm::Vec3, rpy: glm::Vec3) -> Self {
         let mut t = Self::default();
-        t.rotate_rpy(rpy);
         t.translate(xyz);
+        t.rotate_rpy(rpy);
         t
     }
     pub fn rotate_rpy(&mut self, rpy: glm::Vec3) {
@@ -62,7 +74,23 @@ impl Transform {
         self.tmatrix = glm::rotate(&self.tmatrix, angle, &axis);
     }
     pub fn translate(&mut self, xyz: glm::Vec3) {
-        self.tmatrix = glm::translate(&self.tmatrix, &xyz);
+
+        let t =     glm::translate(&self.tmatrix, &xyz);
+        self.tmatrix = t;
+    }
+}
+
+impl fmt::Display for Transform {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for i in 0..4 {
+            write!(f, "[")?;
+            for j in 0..4 {
+                write!(f, "{:.3} ", self.tmatrix[(i, j)])?;
+            }
+            write!(f, "]")?;
+            writeln!(f)?;
+        }
+        Ok(())
     }
 }
 
@@ -106,6 +134,9 @@ pub trait BoxMesh: Default {
 pub trait CylinderMesh: Default {
     fn create_cylinder(r: f32, h: f32, nface: isize) -> Self;
 }
+pub trait PlaneMesh: Default {
+    fn create_plane() -> Self;
+}
 impl BoxMesh for TriMesh {
     fn create_box(sz: glm::Vec3) -> Self {
         let [side1, side2, side3]: [glm::Vec3; 3];
@@ -113,7 +144,7 @@ impl BoxMesh for TriMesh {
         side2 = [0.0, sz[1], 0.0].into();
         side3 = [0.0, 0.0, sz[2]].into();
 
-        let v1 = 0.5 * (side1 + side2 + side3);
+        let v1 = (sz*0.5) - /* 0.5 * */ (side1 + side2 + side3);
         let v2 = v1 + side1;
         let v3 = v2 + side2;
         let v4 = v3 - side1;
@@ -137,7 +168,7 @@ impl CylinderMesh for TriMesh {
         side1 = [r, 0.0, 0.0].into();
         side2 = [0.0, r, 0.0].into();
         side3 = [0.0, 0.0, h].into();
-        let bottom = 0.5 * side3; // centre of base
+        let bottom = side3*0.5 -  side3; // centre of base
         let top = bottom + side3; // centre of top
 
         use std::f32::consts::PI;
@@ -157,6 +188,19 @@ impl CylinderMesh for TriMesh {
             mesh.add_triangle([v4, v3, top]); // add triangles for top
         }
         return mesh;
+    }
+}
+impl PlaneMesh for TriMesh {
+    fn create_plane() -> Self {
+        static SIZE: f32 = 100.0;
+        let mut mesh = TriMesh::default();
+        mesh.add_rectangle([
+            glm::vec3(-SIZE, -SIZE, 0.0),
+            glm::vec3(SIZE, -SIZE, 0.0),
+            glm::vec3(SIZE, SIZE, 0.0),
+            glm::vec3(-SIZE, SIZE, 0.0),
+            ]);
+        mesh
     }
 }
 
@@ -217,7 +261,6 @@ impl From<MeshType> for TriMesh {
     fn from(mesh_type: MeshType) -> Self {
         match mesh_type {
             MeshType::STL(fname) => {
-                println!("{}", fname);
                 parse_stl(std::fs::read_to_string(fname).expect("could not read file"))
             }
             // OBJ(fstring) -> parse_obj(fstring),
@@ -256,11 +299,15 @@ impl Polyhedron {
                 .collect(),
         }
     }
-    // pub fn update(&mut self) {
-    //
-    // }
+    pub fn update_base(&mut self) {
+        self.verts.par_iter_mut().for_each(|v| *v = self.transform * (*v));
+        // self.transform = Transform::default(); // update to new frame
+    }
+    pub fn set_color(&mut self, color: glm::Vec3) {
+        self.verts.par_iter_mut().for_each(|v| (*v).color = color);
+    }
     pub fn scale(&mut self, factor: f32) {
-        self.verts.par_iter_mut().for_each(|v| (*v).position *= factor)
+        self.verts.par_iter_mut().for_each(|v| (*v).position *= factor);
     }
 }
 
@@ -322,7 +369,7 @@ impl <'a, 'b> DrawMeshBuffer<'b> for wgpu::RenderPass<'a> where 'b: 'a {
     fn draw_mesh(&mut self, vao: &'b MeshBuffer, camera_bind_group: &'b wgpu::BindGroup, light_bind_group: &'b wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup, transform_index: u32) {
         self.set_bind_group(0, &camera_bind_group, &[]);
         self.set_bind_group(1, &light_bind_group, &[]);
-        self.set_bind_group(2, &transform_bind_group, &[transform_index]);
+        self.set_bind_group(2, &transform_bind_group, &[/* transform_index */]);
         self.set_vertex_buffer(0, vao.vertex_buffer.slice(..));
         self.set_index_buffer(vao.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         self.draw_indexed(0..vao.n_indices, 0, 0..1);
