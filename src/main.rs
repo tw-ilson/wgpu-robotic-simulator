@@ -1,5 +1,6 @@
 use physics_engine::graphics::GraphicsProgram;
 use physics_engine::wgpu_program::WGPUGraphics;
+use nalgebra_glm as glm;
 
 fn main() {
     let event_loop = winit::event_loop::EventLoop::new();

@@ -40,10 +40,10 @@ impl Camera {
     pub fn new(w: u32, h: u32) -> Self {
         // println!("Created a Camera");
         let new_camera = Self {
-            eye_posn: glm::vec3(0.0, 0.0, 2.0),
+            eye_posn: glm::vec3(0.0, -1.0, 0.0),
             view_direction: 
-                glm::vec3(0.0, 0.0, -1.0),
-            up_vector: glm::vec3(0.0, 1.0, 0.0),
+                glm::vec3(0.0, 1.0, 0.0),
+            up_vector: glm::vec3(0.0, 0.0, 1.0),
             aspect: (w as f32) / (h as f32),
             fovy: 45.0,
             znear: 0.1,
@@ -79,11 +79,17 @@ impl Camera {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+struct InputState {
+    left:bool, right:bool, forward:bool, backward:bool, up:bool, down:bool
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct CameraController {
     speed: f32,
     mouse_pressed:bool,
     old_mouse_posn: glm::Vec2,
-    input_state: [bool; 4],
+    input_state: InputState,
 }
 impl Default for CameraController {
     fn default() -> Self{
@@ -91,7 +97,7 @@ impl Default for CameraController {
             mouse_pressed:false,
             old_mouse_posn: glm::vec2(0.0, 0.0),
             speed: 0.05,
-            input_state: [false, false, false, false],
+            input_state: InputState { left: false, right: false, forward: false, backward: false, up: false, down: false }
         }
     }
 }
@@ -117,19 +123,27 @@ impl CameraController {
                 let is_pressed = *state == ElementState::Pressed;
                 match keycode {
                     VirtualKeyCode::W | VirtualKeyCode::Up => {
-                        self.input_state[0] = is_pressed;
+                        self.input_state.forward = is_pressed;
                         true
                     }
                     VirtualKeyCode::A | VirtualKeyCode::Left => {
-                        self.input_state[1] = is_pressed;
+                        self.input_state.left = is_pressed;
                         true
                     }
                     VirtualKeyCode::S | VirtualKeyCode::Down => {
-                        self.input_state[2] = is_pressed;
+                        self.input_state.backward = is_pressed;
                         true
                     }
                     VirtualKeyCode::D | VirtualKeyCode::Right => {
-                        self.input_state[3] = is_pressed;
+                        self.input_state.right = is_pressed;
+                        true
+                    }
+                    VirtualKeyCode::Z  => {
+                        self.input_state.up = is_pressed;
+                        true
+                    }
+                    VirtualKeyCode::X  => {
+                        self.input_state.down = is_pressed;
                         true
                     }
                     _ => false,
@@ -152,17 +166,23 @@ impl CameraController {
         // self.old_mouse_posn = new_mouse_posn
     }
     pub fn update(&mut self, cam:&mut Camera) {
-        if self.input_state[0] {
+        if self.input_state.forward {
             self.move_forward(cam)
         }
-        if self.input_state[1] {
+        if self.input_state.left {
             self.move_left(cam)
         }
-        if self.input_state[2] {
+        if self.input_state.backward {
             self.move_backward(cam)
         }
-        if self.input_state[3] {
+        if self.input_state.right {
             self.move_right(cam)
+        }
+        if self.input_state.up {
+            self.move_up(cam)
+        }
+        if self.input_state.down {
+            self.move_down(cam)
         }
     }
     fn move_forward(&mut self, cam:&mut Camera) {
@@ -172,26 +192,26 @@ impl CameraController {
         cam.eye_posn -= self.speed * cam.view_direction;
     }
     fn move_left(&mut self, cam:&mut Camera) {
-        cam.eye_posn += self.speed
+        cam.eye_posn -= self.speed
             * glm::vec3(
-                cam.view_direction.z,
                 cam.view_direction.y,
                 -cam.view_direction.x,
+                cam.view_direction.z,
             );
     }
     fn move_right(&mut self, cam:&mut Camera ) {
-        cam.eye_posn -= self.speed
+        cam.eye_posn += self.speed
             * glm::vec3(
-                cam.view_direction.z,
                 cam.view_direction.y,
                 -cam.view_direction.x,
+                cam.view_direction.z,
             );
     }
     fn move_up(&mut self, cam:&mut Camera) {
-        cam.eye_posn.y += self.speed;
+        cam.eye_posn += cam.up_vector * self.speed;
     }
     fn move_down(&mut self, cam:&mut Camera) {
-        cam.eye_posn.y -= self.speed;
+        cam.eye_posn -= cam.up_vector * self.speed;
     }
 
 }

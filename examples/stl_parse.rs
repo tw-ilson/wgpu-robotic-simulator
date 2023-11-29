@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, MeshBuffer, PlaneMesh};
+use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, MeshBuffer, PlaneMesh, SphereMesh, MeshType, OptimizeMesh};
 use physics_engine::wgpu_program::WGPUGraphics;
 use physics_engine::graphics::GraphicsProgram;
 use physics_engine::shader::CompilePipeline;
@@ -15,18 +15,21 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
     program.get_backend_info();
 
-    let mut box_mesh = Polyhedron::from(TriMesh::create_box([1.,1.,2.].into()));
-    let mut cylinder_mesh = Polyhedron::from(TriMesh::create_cylinder(1., 2., 30));
-    let mut plane_mesh = Polyhedron::from(TriMesh::create_plane());
-    // plane_mesh.set_color([0.0, 1.0, 0.0].into());
-    // box_mesh.transform.rotate_rpy([PI/4., 0., 0.].into());
-    cylinder_mesh.transform.rotate_rpy([-1.5708, 0.,0.].into());
+    // let mut box_mesh = Polyhedron::from(TriMesh::create_box([1.,1.,2.].into()));
+    // let mut cylinder_mesh = Polyhedron::from(TriMesh::create_cylinder(1., 2., 30));
+    // let mut sphere_mesh = Polyhedron::optimize(TriMesh::create_sphere(1.0, 20, 20));
+    // let mut plane_mesh = Polyhedron::from(TriMesh::create_plane());
+    // cylinder_mesh.transform.rotate_rpy([-1.5708, 0.,0.].into());
     // box_mesh.update_base();
-    cylinder_mesh.update_base();
-    // let mesh = Polyhedron::from("assets/mesh/teapot.stl".to_owned());
-
+    // cylinder_mesh.update_base();
+    let mut mesh = Polyhedron::from("assets/mesh/teapot.stl".to_owned());
+    mesh.scale_xyz([0.4,0.4, 0.2].into());
+    mesh.set_color([1.0,0.0,0.0].into());
+    mesh.transform.translate([0.,0.,-1.,].into());
+    mesh.transform.rotate_rpy([PI/6., 0., 0.].into());
+    mesh.update_base();
     // Create buffers
-    let mesh_list = vec![cylinder_mesh, plane_mesh];
+    let mesh_list = vec![mesh];
     let buffer_list:Vec<MeshBuffer> = mesh_list.iter().map(|mesh| program.create_mesh_buffer(mesh)).collect();
 
     //Initialize uniform buffers
@@ -43,6 +46,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                                &transform_buffer,
     ]);
 
+    // std::process::exit(0);
     
     // Create pipeline from vertex, fragment shaders
     let pipeline = program.create_shader_program(shader_string);

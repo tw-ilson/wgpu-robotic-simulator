@@ -1,13 +1,20 @@
 use crate::graphics::Vertex;
+use crate::util::print_type_of;
 use itertools::Itertools;
-use rayon::prelude::*;
+// use rayon::prelude::*;
 use std::convert::{From, Into};
 use std::fmt;
+use std::io::Read;
+use std::slice::Iter;
+use bytemuck::{cast_vec, Pod, Zeroable};
+// use core::error::{Error, Result};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Triangle {
     pub vertices: [Vertex; 3],
 }
+unsafe impl Zeroable for Triangle {}
+unsafe impl Pod for Triangle {}
 
 #[non_exhaustive]
 pub enum MeshType {
@@ -25,8 +32,8 @@ pub struct TriMesh {
 pub struct Transform {
     pub tmatrix: glm::Mat4,
 }
-unsafe impl bytemuck::Pod for Transform {}
-unsafe impl bytemuck::Zeroable for Transform {}
+unsafe impl Pod for Transform {}
+unsafe impl Zeroable for Transform {}
 
 impl Default for Transform {
     fn default() -> Self {
@@ -137,6 +144,9 @@ pub trait CylinderMesh: Default {
 pub trait PlaneMesh: Default {
     fn create_plane() -> Self;
 }
+pub trait SphereMesh: Default {
+    fn create_sphere(r: f32, n_slices: usize, n_stacks: usize) -> Self;
+}
 impl BoxMesh for TriMesh {
     fn create_box(sz: glm::Vec3) -> Self {
         let [side1, side2, side3]: [glm::Vec3; 3];
@@ -190,6 +200,62 @@ impl CylinderMesh for TriMesh {
         return mesh;
     }
 }
+impl SphereMesh for TriMesh {
+    fn create_sphere(r: f32, n_slices: usize, n_stacks:usize) -> Self {
+        let mut mesh = TriMesh::default();
+        let mut verts: Vec<glm::Vec3> = Vec::with_capacity(n_stacks*n_slices);
+
+        // add top vertex
+        let v0:glm::Vec3 = [0.0, r, 0.0].into();
+        verts.push(v0);
+
+        use std::f32::consts::PI;
+        // generate vertices per stack / slice
+        for i in 0..(n_stacks - 1) {
+            let phi = PI * (i as f32 + 1.0) / (n_stacks as f32);
+            for j in 0..n_slices {
+                let theta = 2.0 * PI * (j as f32) / (n_slices as f32);
+                let x = r * phi.sin() * theta.cos();
+                let y = r * phi.cos();
+                let z = r * phi.sin() * theta.sin();
+                verts.push([x, y, z].into());
+            }
+        }
+
+        // add bottom vertex
+        let v1:glm::Vec3 = [0.0, -r, 0.0].into();
+        verts.push(v1);
+
+        // add top / bottom triangles
+        for i in 0..n_slices {
+            let i0 = i + 1;
+            let i1 = (i + 1) % n_slices + 1;
+            mesh.add_triangle([
+                              v0,
+                              verts[i1],
+                              verts[i0]
+            ]);
+            let i0 = i + n_slices * (n_stacks - 2) + 1;
+            let i1 = (i + 1) % n_slices + n_slices * (n_stacks - 2) + 1;
+            mesh.add_triangle([v1, verts[i0], verts[i1]]);
+        }
+
+        // add quads per stack / slice
+        for j in 0..(n_stacks - 2) {
+            let j0 = j * n_slices + 1;
+            let j1 = (j + 1) * n_slices + 1;
+            for i in 0..n_slices {
+                let i0 = j0 + i;
+                let i1 = j0 + (i + 1) % n_slices;
+                let i2 = j1 + (i + 1) % n_slices;
+                let i3 = j1 + i;
+                mesh.add_rectangle([verts[i0], verts[i1], verts[i2], verts[i3]]);
+            }
+        }
+
+        mesh
+    }
+}
 impl PlaneMesh for TriMesh {
     fn create_plane() -> Self {
         static SIZE: f32 = 100.0;
@@ -204,7 +270,71 @@ impl PlaneMesh for TriMesh {
     }
 }
 
-fn parse_stl(fstring: String) -> TriMesh {
+//entirely taken from pk-stl
+pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
+    let mut data = bytes.into_iter();
+
+    let header: Vec<u8> = data.by_ref().take(80).map(|val| { *val }).collect();
+    let header: String = String::from_utf8_lossy(&header).trim_end_matches("\0").to_string();
+
+    let triangle_count = {
+        let mut raw = [0; 4];
+
+        for i in 0..4 {
+            raw[i] = match data.next() {
+                Some(val) => *val,
+                None => panic!()
+            }
+        }
+
+        u32::from_le_bytes(raw)
+    };
+
+    let mut faces: Vec<Triangle> = Vec::with_capacity(triangle_count as usize);
+
+    for _ in 0..(triangle_count as usize) {
+        let normal = read_f32_triplet(&mut data).unwrap();
+        let vert_a = read_f32_triplet(&mut data).unwrap();
+        let vert_b = read_f32_triplet(&mut data).unwrap();
+        let vert_c = read_f32_triplet(&mut data).unwrap();
+
+        let _ = data.next();
+        let _ = data.next();
+
+        faces.push(Triangle {
+            // normal: Vec3::new(normal),
+            vertices: [
+                Vertex::from(glm::Vec3::from(vert_a)),
+                Vertex::from(glm::Vec3::from(vert_b)),
+                Vertex::from(glm::Vec3::from(vert_c))
+            ]
+        })
+    }
+
+    TriMesh { faces }
+}
+
+fn read_f32_triplet<'a>(data: &mut Iter<'a, u8>) -> Result<[f32; 3], String> {
+    Ok([
+        read_f32(data)?,
+        read_f32(data)?,
+        read_f32(data)?
+    ])
+}
+
+fn read_f32<'a>(data: &mut Iter<'a, u8>) -> Result<f32, String> {
+    let mut raw = [0; 4];
+    for item in &mut raw {
+        *item = match data.next() {
+            Some(val) => *val,
+            None => return Err("Invalid triangle count byte sequence".into())
+        };
+    }
+
+    Ok(f32::from_le_bytes(raw))
+}
+
+fn parse_ascii_stl(fstring: String) -> TriMesh {
     let lines: Vec<&str> = {
         let mut lines = fstring.lines();
         match lines.next() {
@@ -238,9 +368,9 @@ fn parse_stl(fstring: String) -> TriMesh {
                     let r = if split.next().unwrap() == "facet" {
                         let normal = get_vert(&mut split);
                         let mut vertices: [Vertex; 3] = [
-                            get_vert(&mut lines.clone()[k + 2].split_whitespace()).into(),
-                            get_vert(&mut lines.clone()[k + 3].split_whitespace()).into(),
-                            get_vert(&mut lines.clone()[k + 4].split_whitespace()).into(),
+                            get_vert(&mut lines[k + 2].split_whitespace()).into(),
+                            get_vert(&mut lines[k + 3].split_whitespace()).into(),
+                            get_vert(&mut lines[k + 4].split_whitespace()).into(),
                         ];
                         vertices[0].normal = normal;
                         vertices[1].normal = normal;
@@ -256,12 +386,22 @@ fn parse_stl(fstring: String) -> TriMesh {
         },
     }
 }
+fn parse_stl(fname: String) -> TriMesh {
+    // let mut file = std::fs::File::open(fname).expect("Unable to open file");
+    let bytes = std::fs::read(fname).expect("unable to read file");
+    if &bytes[0..6] == b"solid " {
+        // parse_ascii_stl(std::fs::read_to_string(fname).expect("could not read file"))
+        parse_ascii_stl(String::from_utf8(bytes).expect("could not convert to utf8"))
+    } else {
+        parse_binary_stl(bytes.as_slice())
+    }
+}
 
 impl From<MeshType> for TriMesh {
     fn from(mesh_type: MeshType) -> Self {
         match mesh_type {
             MeshType::STL(fname) => {
-                parse_stl(std::fs::read_to_string(fname).expect("could not read file"))
+                parse_stl(fname)
             }
             // OBJ(fstring) -> parse_obj(fstring),
             _ => panic!("type unsupported"),
@@ -280,6 +420,7 @@ impl Default for Polyhedron {
     }
 }
 
+
 impl Polyhedron {
     pub fn verts(&self) -> &Vec<Vertex> {
         &self.verts
@@ -287,27 +428,18 @@ impl Polyhedron {
     pub fn indices(&self) -> &Vec<u16> {
         &self.indices
     }
-    pub fn from_fast(mesh: TriMesh) -> Self {
-        Self {
-            transform: Transform::default(),
-            verts: mesh.faces.par_iter().flat_map(|tri| tri.vertices).collect(),
-            indices: (0..mesh.faces.len() as u16)
-                .flat_map(|fi| {
-                    let k: u16 = fi * 3;
-                    k..k + 3
-                })
-                .collect(),
-        }
-    }
     pub fn update_base(&mut self) {
-        self.verts.par_iter_mut().for_each(|v| *v = self.transform * (*v));
+        self.verts.iter_mut().for_each(|v| *v = self.transform * (*v));
         // self.transform = Transform::default(); // update to new frame
     }
     pub fn set_color(&mut self, color: glm::Vec3) {
-        self.verts.par_iter_mut().for_each(|v| (*v).color = color);
+        self.verts.iter_mut().for_each(|v| {(*v).color = color});
     }
     pub fn scale(&mut self, factor: f32) {
-        self.verts.par_iter_mut().for_each(|v| (*v).position *= factor);
+        self.verts.iter_mut().for_each(|v| (*v).position *= factor);
+    }
+    pub fn scale_xyz(&mut self, factor: glm::Vec3) {
+        self.verts.iter_mut().for_each(|v| v.position = glm::diagonal3x3(&factor) * v.position);
     }
 }
 
@@ -320,9 +452,12 @@ impl From<String> for Polyhedron {
     }
 }
 
-impl From<TriMesh> for Polyhedron {
+pub trait OptimizeMesh<T>  {
+    fn optimize(mesh:T) -> Self;
+}
+impl OptimizeMesh<TriMesh> for Polyhedron {
     // create efficient index buffer -- adds overhead
-    fn from(mut mesh: TriMesh) -> Self {
+    fn optimize(mut mesh: TriMesh) -> Self {
         mesh.calculate_normals();
         let verts: Vec<Vertex> = mesh
             .faces
@@ -333,7 +468,7 @@ impl From<TriMesh> for Polyhedron {
 
         let indices: Vec<u16> = mesh
             .faces
-            .par_iter()
+            .iter()
             .flat_map(|tri| {
                 let mut indices: Vec<u16> = Vec::new();
                 for i in 0..3 {
@@ -352,6 +487,22 @@ impl From<TriMesh> for Polyhedron {
             indices,
         };
         poly
+    }
+}
+
+impl From<TriMesh> for Polyhedron {
+    fn from(mut mesh: TriMesh) -> Self {
+        // mesh.calculate_normals();
+        Self {
+            transform: Transform::default(),
+            indices: (0..mesh.faces.len() as u16)
+                .flat_map(|fi| {
+                    let k: u16 = fi * 3;
+                    k..k + 3
+                })
+                .collect(),
+            verts: bytemuck::cast_vec::<Triangle, Vertex>(mesh.faces),
+        }
     }
 }
 
