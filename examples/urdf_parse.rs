@@ -21,8 +21,8 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     robot.build();
 
     // Create buffers
-    let mesh_list:Vec<_> = robot.links.iter().map(|link| link.geometry.clone()).collect();
-    let buffer_list:Vec<MeshBuffer> = mesh_list.iter().map(|mesh| program.create_mesh_buffer(mesh)).collect();
+    // let mesh_list:Vec<_> = robot.links.iter().map(|link| link.geometry.clone()).collect();
+    let buffer_list:Vec<MeshBuffer> = program.robot_create_buffers(&robot);
 
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();

@@ -15,6 +15,17 @@ pub struct Triangle {
 }
 unsafe impl Zeroable for Triangle {}
 unsafe impl Pod for Triangle {}
+impl Triangle {
+    fn new(verts: [glm::Vec3;3], normal: glm::Vec3, color: glm::Vec3) -> Self {
+        Self {
+            vertices : [
+                Vertex { position: verts[0], normal, color},
+                Vertex { position: verts[1], normal, color},
+                Vertex { position: verts[2], normal, color},
+            ]
+        }
+    }
+}
 
 #[non_exhaustive]
 pub enum MeshType {
@@ -274,8 +285,8 @@ impl PlaneMesh for TriMesh {
 pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
     let mut data = bytes.into_iter();
 
-    let header: Vec<u8> = data.by_ref().take(80).map(|val| { *val }).collect();
-    let header: String = String::from_utf8_lossy(&header).trim_end_matches("\0").to_string();
+    let _header: Vec<u8> = data.by_ref().take(80).map(|val| { *val }).collect();
+    // let _header: String = String::from_utf8_lossy(&_header).trim_end_matches("\0").to_string();
 
     let triangle_count = {
         let mut raw = [0; 4];
@@ -293,22 +304,24 @@ pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
     let mut faces: Vec<Triangle> = Vec::with_capacity(triangle_count as usize);
 
     for _ in 0..(triangle_count as usize) {
-        let normal = read_f32_triplet(&mut data).unwrap();
-        let vert_a = read_f32_triplet(&mut data).unwrap();
-        let vert_b = read_f32_triplet(&mut data).unwrap();
-        let vert_c = read_f32_triplet(&mut data).unwrap();
+        let normal = glm::Vec3::from(read_f32_triplet(&mut data).unwrap());
+        let vert_a = glm::Vec3::from(read_f32_triplet(&mut data).unwrap());
+        let vert_b = glm::Vec3::from(read_f32_triplet(&mut data).unwrap());
+        let vert_c = glm::Vec3::from(read_f32_triplet(&mut data).unwrap());
 
         let _ = data.next();
         let _ = data.next();
 
-        faces.push(Triangle {
-            // normal: Vec3::new(normal),
-            vertices: [
-                Vertex::from(glm::Vec3::from(vert_a)),
-                Vertex::from(glm::Vec3::from(vert_b)),
-                Vertex::from(glm::Vec3::from(vert_c))
-            ]
-        })
+        let tri = Triangle::new (
+            [
+                vert_a,
+                vert_b,
+                vert_c,
+            ], 
+            normal,
+            glm::Vec3::default()
+        );
+        faces.push(tri)
     }
 
     TriMesh { faces }
@@ -458,7 +471,7 @@ pub trait OptimizeMesh<T>  {
 impl OptimizeMesh<TriMesh> for Polyhedron {
     // create efficient index buffer -- adds overhead
     fn optimize(mut mesh: TriMesh) -> Self {
-        mesh.calculate_normals();
+        // mesh.calculate_normals();
         let verts: Vec<Vertex> = mesh
             .faces
             .iter()
@@ -492,7 +505,7 @@ impl OptimizeMesh<TriMesh> for Polyhedron {
 
 impl From<TriMesh> for Polyhedron {
     fn from(mut mesh: TriMesh) -> Self {
-        // mesh.calculate_normals();
+        mesh.calculate_normals();
         Self {
             transform: Transform::default(),
             indices: (0..mesh.faces.len() as u16)

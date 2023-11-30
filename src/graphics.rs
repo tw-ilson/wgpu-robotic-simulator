@@ -13,6 +13,7 @@ impl From<glm::Vec3> for Vertex {
         Self { position, color: glm::vec3(1.,1.,1.), normal: glm::vec3(0., 0., 0.) }
     }
 }
+
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
 

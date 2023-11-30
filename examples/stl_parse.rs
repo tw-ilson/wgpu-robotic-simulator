@@ -22,7 +22,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // cylinder_mesh.transform.rotate_rpy([-1.5708, 0.,0.].into());
     // box_mesh.update_base();
     // cylinder_mesh.update_base();
-    let mut mesh = Polyhedron::from("assets/mesh/teapot.stl".to_owned());
+    let mut mesh = Polyhedron::from("assets/meshes/forearm.stl".to_owned());
     mesh.scale_xyz([0.4,0.4, 0.2].into());
     mesh.set_color([1.0,0.0,0.0].into());
     mesh.transform.translate([0.,0.,-1.,].into());
