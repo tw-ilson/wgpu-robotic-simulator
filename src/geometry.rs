@@ -116,7 +116,7 @@ impl fmt::Display for Transform {
 pub struct Polyhedron {
     pub transform: Transform,
     pub verts: Vec<Vertex>,
-    pub indices: Vec<u16>,
+    pub indices: Vec<u32>,
 }
 
 impl TriMesh {
@@ -283,7 +283,7 @@ impl PlaneMesh for TriMesh {
 
 //entirely taken from pk-stl
 pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
-    let mut data = bytes.into_iter();
+    let mut data = bytes.iter();
 
     let _header: Vec<u8> = data.by_ref().take(80).map(|val| { *val }).collect();
     // let _header: String = String::from_utf8_lossy(&_header).trim_end_matches("\0").to_string();
@@ -319,8 +319,10 @@ pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
                 vert_c,
             ], 
             normal,
-            glm::Vec3::default()
+            // glm::Vec3::default()
+            normal
         );
+        // println!("{:#?}", tri);
         faces.push(tri)
     }
 
@@ -438,7 +440,7 @@ impl Polyhedron {
     pub fn verts(&self) -> &Vec<Vertex> {
         &self.verts
     }
-    pub fn indices(&self) -> &Vec<u16> {
+    pub fn indices(&self) -> &Vec<u32> {
         &self.indices
     }
     pub fn update_base(&mut self) {
@@ -479,17 +481,17 @@ impl OptimizeMesh<TriMesh> for Polyhedron {
             .dedup()
             .collect_vec();
 
-        let indices: Vec<u16> = mesh
+        let indices: Vec<u32> = mesh
             .faces
             .iter()
             .flat_map(|tri| {
-                let mut indices: Vec<u16> = Vec::new();
+                let mut indices: Vec<u32> = Vec::new();
                 for i in 0..3 {
                     let idx1 = verts
                         .iter()
                         .position(|&v_b| v_b == tri.vertices[i])
                         .unwrap();
-                    indices.push(idx1 as u16);
+                    indices.push(idx1 as u32);
                 }
                 indices
             })
@@ -508,9 +510,9 @@ impl From<TriMesh> for Polyhedron {
         mesh.calculate_normals();
         Self {
             transform: Transform::default(),
-            indices: (0..mesh.faces.len() as u16)
+            indices: (0..mesh.faces.len() as u32)
                 .flat_map(|fi| {
-                    let k: u16 = fi * 3;
+                    let k: u32 = fi * 3;
                     k..k + 3
                 })
                 .collect(),
@@ -535,7 +537,7 @@ impl <'a, 'b> DrawMeshBuffer<'b> for wgpu::RenderPass<'a> where 'b: 'a {
         self.set_bind_group(1, &light_bind_group, &[]);
         self.set_bind_group(2, &transform_bind_group, &[/* transform_index */]);
         self.set_vertex_buffer(0, vao.vertex_buffer.slice(..));
-        self.set_index_buffer(vao.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        self.set_index_buffer(vao.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         self.draw_indexed(0..vao.n_indices, 0, 0..1);
     }
     fn draw_mesh_list(&mut self, vao_list: &'a Vec<MeshBuffer>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup) {

@@ -19,7 +19,7 @@ impl From<Origin> for Transform {
 }
 
 #[derive(Default, Debug, Clone)]
-struct InertialBody {
+pub struct InertialBody {
     pub transform: Transform,
     pub mass: f32,
     pub ixx: f32,
@@ -31,12 +31,12 @@ struct InertialBody {
 }
 
 #[derive(Default, Debug, Clone)]
-struct VisualBody {
+pub struct VisualBody {
     pub geometry: Polyhedron,
     pub material: Option<String>,
 }
 #[derive(Default, Debug, Clone)]
-struct CollisionBody {
+pub struct CollisionBody {
     pub transform: Transform,
     pub geometry: Polyhedron,
 }
@@ -301,9 +301,9 @@ fn parse_link_inertial(
                         if let Some([ixx, iyy, izz, ixy, ixz, iyz]) = inertia {
                             link.inertial = InertialBody { transform: origin.unwrap_or_default().into(), mass, ixx, iyy, izz, ixy, ixz, iyz };
                             return Ok(link);
-                        }
+                        } else {panic!("inertial body requires moments of inertia!")}  
                     } else {panic!("inertial body requires mass!")}
-                } else {panic!("inertial body requires moments of inertia!")}
+                }
             }
             _ => {}
         }
@@ -542,7 +542,7 @@ fn parse_robot(
     //setup colors
     for mat in materials {
         for link in links.iter_mut() {
-            println!("{:?}", link.visual.material);
+            // println!("{:?}", link.visual.material);
             if link.visual.material.clone().is_some_and(|mn| mn == mat.name) {
                 // println!("{:?}", mat);
                 link.visual.geometry.set_color(mat.color);
@@ -620,19 +620,22 @@ impl RobotDescriptor {
         self.links.iter_mut()
         .for_each(|l| l.visual.geometry.update_base())
     }
+    // pub fn mesh_list(&self) -> Vec<&Polyhedron> {
+    //
+    // }
 }
 
 pub trait RobotGraphics {
     fn robot_create_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer>;
-    fn draw_robot(&self, robot: &RobotDescriptor);
+    fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline, camera_buffer: &wgpu::Buffer, light_buffer: &wgpu::Buffer, transform_buffer: &wgpu::Buffer);
 }
 
 impl RobotGraphics for WGPUGraphics {
     fn robot_create_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer> {
         robot.links.iter().map(|link| &link.visual.geometry).map(|mesh| self.create_mesh_buffer(mesh)).collect()
     }
-    fn draw_robot(&self, robot: &RobotDescriptor) {
-        // self.draw_mesh_list(pipeline, buffer_list, mesh_list, camera_buffer, light_buffer, transform_buffer)
-        unimplemented!()
+    fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline, camera_buffer: &wgpu::Buffer, light_buffer: &wgpu::Buffer, transform_buffer: &wgpu::Buffer) {
+        let buffers = self.robot_create_buffers(robot);
+        self.draw_mesh_list(pipeline, &buffers, camera_buffer, light_buffer, transform_buffer);
     }
 }

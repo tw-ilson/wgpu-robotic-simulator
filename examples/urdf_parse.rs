@@ -88,8 +88,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
                 // RENDER
                 program.render(&mut |p| {
-                    p.draw_mesh_list(&pipeline, &buffer_list, &mesh_list, &camera_buffer, &light_buffer, &transform_buffer);
-                    // submit will accept anything that implements IntoIter
+                    p.draw_robot(&robot, &pipeline, &camera_buffer, &light_buffer, &transform_buffer)
                 });
             }
             Event::MainEventsCleared => program.window.request_redraw(),

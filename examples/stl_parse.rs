@@ -13,7 +13,7 @@ use winit::{
 pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     let shader_string = include_str!("../shaders/shader.wgsl");
 
-    program.get_backend_info();
+    // program.get_backend_info();
 
     // let mut box_mesh = Polyhedron::from(TriMesh::create_box([1.,1.,2.].into()));
     // let mut cylinder_mesh = Polyhedron::from(TriMesh::create_cylinder(1., 2., 30));
@@ -22,12 +22,12 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // cylinder_mesh.transform.rotate_rpy([-1.5708, 0.,0.].into());
     // box_mesh.update_base();
     // cylinder_mesh.update_base();
-    let mut mesh = Polyhedron::from("assets/meshes/forearm.stl".to_owned());
-    mesh.scale_xyz([0.4,0.4, 0.2].into());
-    mesh.set_color([1.0,0.0,0.0].into());
-    mesh.transform.translate([0.,0.,-1.,].into());
-    mesh.transform.rotate_rpy([PI/6., 0., 0.].into());
-    mesh.update_base();
+    let mut mesh = Polyhedron::from("assets/meshes/3D_model_of_a_Cube.stl".to_owned());
+    mesh.scale_xyz([0.01,0.01, 0.01].into());
+    // mesh.set_color([1.0,0.0,0.0].into());
+    // mesh.transform.translate([0.,0.,-1.,].into());
+    // mesh.transform.rotate_rpy([PI/6., 0., 0.].into());
+    // mesh.update_base();
     // Create buffers
     let mesh_list = vec![mesh];
     let buffer_list:Vec<MeshBuffer> = mesh_list.iter().map(|mesh| program.create_mesh_buffer(mesh)).collect();
@@ -97,7 +97,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
                 // RENDER
                 program.render(&mut |p| {
-                    p.draw_mesh_list(&pipeline, &buffer_list, &mesh_list, &camera_buffer, &light_buffer, &transform_buffer);
+                    p.draw_mesh_list(&pipeline, &buffer_list, &camera_buffer, &light_buffer, &transform_buffer);
                     // submit will accept anything that implements IntoIter
                 });
             }

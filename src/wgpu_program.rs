@@ -165,7 +165,7 @@ impl WGPUGraphics {
             wgpu::BufferUsages::VERTEX,
         )
     }
-    pub fn create_index_buffer(&mut self, indices: &Vec<u16>) -> wgpu::Buffer {
+    pub fn create_index_buffer(&mut self, indices: &Vec<u32>) -> wgpu::Buffer {
         // self.backend.num_indices = indices.len() as u32;
         self.create_buffer(
             "Index Buffer",
@@ -229,7 +229,7 @@ impl WGPUGraphics {
         }
     }
 
-    pub fn draw_mesh_list(&mut self, pipeline: &wgpu::RenderPipeline, buffer_list: &Vec<MeshBuffer>, mesh_list: &Vec<Polyhedron>, camera_buffer: &wgpu::Buffer, light_buffer: &wgpu::Buffer, transform_buffer: &wgpu::Buffer) {
+    pub fn draw_mesh_list(&mut self, pipeline: &wgpu::RenderPipeline, buffer_list: &Vec<MeshBuffer>, /* mesh_list: &Vec<Polyhedron>, */ camera_buffer: &wgpu::Buffer, light_buffer: &wgpu::Buffer, transform_buffer: &wgpu::Buffer) {
         // self.set_clear_color((1.0, 1.0, 1.0, 1.0));
         let output = self
             .backend.surface
