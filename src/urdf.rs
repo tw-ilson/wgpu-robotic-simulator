@@ -37,7 +37,7 @@ pub struct VisualBody {
 }
 #[derive(Default, Debug, Clone)]
 pub struct CollisionBody {
-    pub transform: Transform,
+    // pub transform: Transform,
     pub geometry: Polyhedron,
 }
 
@@ -136,8 +136,8 @@ fn parse_origin(origin_event: XmlEvent) -> Result<Origin, ParseRobotError> {
 
 fn parse_link_geometry(
     xml_parser: &mut EventReader<&[u8]>,
-    mut link: Link,
-) -> Result<Link, ParseRobotError> {
+) -> Result<Polyhedron, ParseRobotError> {
+    let mut shape: Option<Polyhedron> = None;
     loop {
         let event = xml_parser.next();
         match event.unwrap() {
@@ -151,20 +151,22 @@ fn parse_link_geometry(
                         .ok_or("expected file name attribute").unwrap()
                         .value
                         .to_owned();
-                    // let fstring = std::fs::read_to_string(fname).unwrap();
-                    link.visual.geometry = Polyhedron::from(fname.to_owned());
+                    // if fname.starts_with("package://") {
+                    // }
+                    let mut poly = Polyhedron::from(fname.to_owned());
                     if let Some(scale) = attributes
                         .iter()
                         .find(|&a| a.name.local_name == "scale") {
-                            link.visual.geometry.scale_xyz(parse_3f(&scale.value).unwrap());
+                            poly.scale_xyz(parse_3f(&scale.value).unwrap());
                         }
+                    shape = Some(poly);
                 }
                 "box" | "cylinder" | "sphere" => match name.local_name.as_str() {
                     "box" => {
                         let size_attr = attributes.get(0).ok_or("expected sized").unwrap();
                         if size_attr.name.local_name == "size" {
                             let size = parse_3f(&size_attr.value).unwrap();
-                            link.visual.geometry = TriMesh::create_box(size).into();
+                            shape = Polyhedron::from(TriMesh::create_box(size)).into();
                         } else {
                             return Err("box requires size attribute".into())
                         }
@@ -182,7 +184,7 @@ fn parse_link_geometry(
                             .ok_or("cylinder requires radius").unwrap()
                             .value
                             .parse::<f32>().unwrap();
-                        link.visual.geometry = TriMesh::create_cylinder(r, l, 30).into();
+                        shape = Polyhedron::from(TriMesh::create_cylinder(r, l, 30)).into();
                     }
                     "sphere" => {
                         let r = attributes
@@ -191,7 +193,7 @@ fn parse_link_geometry(
                             .ok_or("sphere requires radius").unwrap()
                             .value
                             .parse::<f32>().unwrap();
-                        link.visual.geometry = TriMesh::create_sphere(r,20, 20).into();
+                        shape = Polyhedron::from(TriMesh::create_sphere(r,20, 20)).into();
                     }
                     _ => return Err("unknown element".into()),
                 },
@@ -199,7 +201,7 @@ fn parse_link_geometry(
             },
             EndElement { name } => {
                 if name.local_name == "geometry" {
-                    return Ok(link);
+                    return shape.ok_or("no shape provided?".into())
                 }
             }
             _ => {}
@@ -221,7 +223,7 @@ fn parse_link_visual(
                     let Origin{xyz, rpy} = parse_origin(event.unwrap()).unwrap();
                     transform = Some(Transform::new(xyz, rpy.unwrap_or_default()));
                     },
-                "geometry" => link = parse_link_geometry(xml_parser, link).unwrap(),
+                "geometry" => link.visual.geometry = parse_link_geometry(xml_parser).unwrap(),
                 "material" => if link.visual.material.is_none() {
                     let mat_name = &attributes
                         .iter()
@@ -259,6 +261,10 @@ fn parse_link_collision(
         let event = xml_parser.next();
         match event.clone().unwrap() {
             StartElement { name, attributes, .. } => match name.local_name.as_str() {
+                "origin" => link.collision.geometry.transform = parse_origin(event.unwrap()).unwrap().into(),
+                "geometry" => {
+                    link.collision.geometry = parse_link_geometry(xml_parser).unwrap();
+                },
                 _ => {}
             },
             EndElement { name } => {
@@ -285,12 +291,12 @@ fn parse_link_inertial(
                 "mass" => { mass = attributes.get(0).unwrap().value.parse::<f32>().ok()}
                 "inertia" => { 
                      inertia = Some([
-                        attributes.iter().find(|a| a.name.local_name == "ixx").unwrap().value.parse::<f32>().unwrap(),
-                        attributes.iter().find(|a| a.name.local_name == "iyy").unwrap().value.parse::<f32>().unwrap(),
-                        attributes.iter().find(|a| a.name.local_name == "izz").unwrap().value.parse::<f32>().unwrap(),
-                        attributes.iter().find(|a| a.name.local_name == "ixy").unwrap().value.parse::<f32>().unwrap(),
-                        attributes.iter().find(|a| a.name.local_name == "ixz").unwrap().value.parse::<f32>().unwrap(),
-                        attributes.iter().find(|a| a.name.local_name == "iyz").unwrap().value.parse::<f32>().unwrap(),
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixx"){ a.value.parse::<f32>().unwrap()} else {0.0},
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "iyy"){ a.value.parse::<f32>().unwrap()} else {0.0},
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "izz"){ a.value.parse::<f32>().unwrap()} else {0.0},
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixy"){ a.value.parse::<f32>().unwrap()} else {0.0},
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixz"){ a.value.parse::<f32>().unwrap()} else {0.0},
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "iyz"){ a.value.parse::<f32>().unwrap()} else {0.0},
                         ]);
                 },
                 _ => {}
@@ -573,11 +579,9 @@ impl FromStr for RobotDescriptor {
                 name, attributes, ..
             } => {
                 assert!(name.local_name == "robot");
-                if let Some(attr) = attributes.get(0) {
-                    if attr.name.local_name == "name" {
-                        robot_name = Some(attr.value.clone());
-                    }
-                };
+                if let Some(attr) = attributes.iter().find(|a| a.name.local_name == "name") {
+                    robot_name = Some(attr.value.clone());
+                }
                 return parse_robot(xml_parser, robot_name);
             }
             _ => Err("expected robot element as first element".into()),
@@ -586,19 +590,30 @@ impl FromStr for RobotDescriptor {
 }
 
 impl RobotDescriptor {
+
+    pub fn set_joint_position_relative(&mut self, theta: &[f32]) {
+        if theta.len() != self.joints.len() {panic!("expected {} got {}",  self.joints.len(), theta.len())}
+        for (&th, j) in std::iter::zip(theta.into_iter(), &mut self.joints) {
+            println!("{}", j.joint_name);
+            match j.joint_type {
+                JointType::Revolute => { j.transform.rotate(j.axis.expect("revolute joint requires axis!"), th); /* check for limits */},
+                JointType::Prismatic => {j.transform.translate(th * j.axis.expect("prismatic joint requires axis"));},
+                JointType::Continuous => {j.transform.rotate(j.axis.expect("revolute joint requires axis!"), th);},
+                JointType::Floating => {/* do nothing */},
+                JointType::Fixed => {/* do nothing */},
+            }
+        }
+    }
     fn walk_children(&self, cur_link: &Link) -> Vec<(usize, Transform)> {
         self.joints
             .iter()
             .filter(|j| self.links[j.parent].link_name == cur_link.link_name)
             .map(|j| {
-                let tf = cur_link.visual.geometry.transform * j.transform * self.links[j.child].visual.geometry.transform;
+                // let tf = cur_link.visual.geometry.transform * j.transform * self.links[j.child].visual.geometry.transform;
+                let tf = cur_link.inertial.transform * j.transform * self.links[j.child].inertial.transform;
                 (j.child, tf)
             })
-            .collect_vec()
-    }
-
-    pub fn update(&mut self, theta: Vec<f32>) {
-        unimplemented!();
+            .collect()
     }
     // Walk the DAG
     pub fn build(&mut self) {
@@ -608,8 +623,13 @@ impl RobotDescriptor {
         loop {
             let mut queue: Option<Vec<(usize, Transform)>> = None;
             for (c_id, c_tf) in &child_transforms {
+                // update link with new transform
+                self.links[*c_id].inertial.transform = *c_tf;
                 self.links[*c_id].visual.geometry.transform = *c_tf;
-                queue = Some(self.walk_children(&self.links[*c_id]));
+                // query for correct transforms of children links
+                let mut v = self.walk_children(&self.links[*c_id]);
+                v.extend(queue.unwrap_or_default());
+                queue = Some(v);
             }
             if let Some(qlist) = queue {
                 child_transforms = qlist;
@@ -620,9 +640,6 @@ impl RobotDescriptor {
         self.links.iter_mut()
         .for_each(|l| l.visual.geometry.update_base())
     }
-    // pub fn mesh_list(&self) -> Vec<&Polyhedron> {
-    //
-    // }
 }
 
 pub trait RobotGraphics {

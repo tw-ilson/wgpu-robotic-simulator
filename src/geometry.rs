@@ -1,12 +1,14 @@
 use crate::graphics::Vertex;
-use crate::util::print_type_of;
+use std::fs::File;
+use std::io::{BufReader, BufRead};
+// use crate::util::print_type_of;
 use itertools::Itertools;
 // use rayon::prelude::*;
 use std::convert::{From, Into};
 use std::fmt;
-use std::io::Read;
+// use std::io::Read;
 use std::slice::Iter;
-use bytemuck::{cast_vec, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable};
 // use core::error::{Error, Result};
 
 #[derive(Debug, Copy, Clone)]
@@ -139,6 +141,7 @@ impl TriMesh {
             let edge1 = tri.vertices[1].position - tri.vertices[0].position;
             let edge2 = tri.vertices[2].position - tri.vertices[1].position;
             let normal = glm::cross(&edge1, &edge2);
+            let normal = glm::normalize(&normal);
             tri.vertices[0].normal = normal;
             tri.vertices[1].normal = normal;
             tri.vertices[2].normal = normal;
@@ -319,8 +322,8 @@ pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
                 vert_c,
             ], 
             normal,
-            // glm::Vec3::default()
-            normal
+            glm::Vec3::default()
+            // normal
         );
         // println!("{:#?}", tri);
         faces.push(tri)
@@ -412,13 +415,92 @@ fn parse_stl(fname: String) -> TriMesh {
     }
 }
 
+fn parse_obj(fname: String) -> TriMesh {
+    let file = match File::open(fname) {
+        Ok(file) => file,
+        Err(_) => {
+            println!("FILE not found!");
+            std::process::exit(-1);
+        }
+    };
+    enum State {
+        Wait,
+        Vertex,
+        Normal,
+        Face,
+    }
+
+    let reader = BufReader::new(file);
+    let mut state = State::Wait;
+    let mut vertices: Vec<glm::Vec3> = Vec::new();
+    let mut normals: Vec<glm::Vec3> = Vec::new();
+    let mut faces: Vec<Triangle> = Vec::new();
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            let mut tokens = line.split_whitespace();
+            if let Some(token) = tokens.next() {
+                match state {
+                    State::Wait => {
+                        match token {
+                            "v" => state = State::Vertex,
+                            "vn" => state = State::Normal,
+                            "f" => state = State::Face,
+                            "mtllib" => {},
+                            "o" => {},
+                            _ => {
+                                if token.trim().starts_with("#") {
+                                    continue;
+                                }
+                                eprintln!("Unexpected token -- possibly file contains unsupported features");
+                            }
+                        }
+                    }
+                    State::Vertex => {
+                        let x = tokens.next().unwrap().parse::<f32>().unwrap();
+                        let y = tokens.next().unwrap().parse::<f32>().unwrap();
+                        let z = tokens.next().unwrap().parse::<f32>().unwrap();
+                        vertices.push(glm::vec3(x, y, z));
+                        state = State::Wait;
+                    }
+                    State::Normal => {
+                        let x = tokens.next().unwrap().parse::<f32>().unwrap();
+                        let y = tokens.next().unwrap().parse::<f32>().unwrap();
+                        let z = tokens.next().unwrap().parse::<f32>().unwrap();
+                        normals.push(glm::vec3(x, y, z));
+                        state = State::Wait;
+                    }
+                    State::Face => {
+                        let mut face = Triangle { vertices: [Vertex::default(); 3] };
+                        let re = regex::Regex::new(r"v?((?:[0-9])*)\/\/(?:vn)?((?:[0-9])*)").unwrap();
+
+                        for (k, token) in tokens.enumerate().take(3) {
+                            if let Some(captures) = re.captures(token) {
+                                let vidx = captures[1].parse::<usize>().unwrap_or_default() - 1;
+                                let nidx = captures[2].parse::<usize>().unwrap_or_default() - 1;
+                                face.vertices[k].position = vertices.get(vidx).unwrap().clone();
+                                face.vertices[k].normal = normals.get(nidx).unwrap().clone();
+                            }
+                        }
+                        faces.push(face);
+                        state = State::Wait;
+                    }
+                }
+            }
+        }
+    }
+    TriMesh { faces }
+}
+
+
+
 impl From<MeshType> for TriMesh {
     fn from(mesh_type: MeshType) -> Self {
         match mesh_type {
             MeshType::STL(fname) => {
                 parse_stl(fname)
             }
-            // OBJ(fstring) -> parse_obj(fstring),
+            MeshType::OBJ(fname) => parse_obj(fname),
             _ => panic!("type unsupported"),
         }
     }
@@ -462,6 +544,7 @@ impl From<String> for Polyhedron {
     fn from(value: String) -> Self {
         match value.split(".").last().unwrap().to_lowercase().as_str() {
             "stl" => Polyhedron::from(TriMesh::from(MeshType::STL(value))),
+            "obj" => Polyhedron::from(TriMesh::from(MeshType::OBJ(value))),
             _ => unimplemented!(),
         }
     }
@@ -472,7 +555,7 @@ pub trait OptimizeMesh<T>  {
 }
 impl OptimizeMesh<TriMesh> for Polyhedron {
     // create efficient index buffer -- adds overhead
-    fn optimize(mut mesh: TriMesh) -> Self {
+    fn optimize(mesh: TriMesh) -> Self {
         // mesh.calculate_normals();
         let verts: Vec<Vertex> = mesh
             .faces
@@ -510,11 +593,7 @@ impl From<TriMesh> for Polyhedron {
         mesh.calculate_normals();
         Self {
             transform: Transform::default(),
-            indices: (0..mesh.faces.len() as u32)
-                .flat_map(|fi| {
-                    let k: u32 = fi * 3;
-                    k..k + 3
-                })
+            indices: (0..3*mesh.faces.len() as u32)
                 .collect(),
             verts: bytemuck::cast_vec::<Triangle, Vertex>(mesh.faces),
         }

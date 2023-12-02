@@ -2,7 +2,7 @@ use std::collections::HashMap;
 // use std::hash::{Hash, Hasher};
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Default, Copy, Clone, Debug, PartialEq)]
 pub struct Vertex {
     pub position: glm::Vec3,
     pub color: glm::Vec3,

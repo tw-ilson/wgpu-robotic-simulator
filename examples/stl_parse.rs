@@ -22,9 +22,9 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // cylinder_mesh.transform.rotate_rpy([-1.5708, 0.,0.].into());
     // box_mesh.update_base();
     // cylinder_mesh.update_base();
-    let mut mesh = Polyhedron::from("assets/meshes/3D_model_of_a_Cube.stl".to_owned());
+    let mut mesh = Polyhedron::from("assets/meshes/finger_tip.stl".to_owned());
     mesh.scale_xyz([0.01,0.01, 0.01].into());
-    // mesh.set_color([1.0,0.0,0.0].into());
+    mesh.set_color([1.0,0.0,0.0].into());
     // mesh.transform.translate([0.,0.,-1.,].into());
     // mesh.transform.rotate_rpy([PI/6., 0., 0.].into());
     // mesh.update_base();

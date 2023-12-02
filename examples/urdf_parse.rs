@@ -17,7 +17,8 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
     program.get_backend_info();
 
-    let mut robot = RobotDescriptor::from_str(include_str!("../assets/xarm.urdf")).expect("unable to read urdf");
+    let mut robot = RobotDescriptor::from_str(include_str!("../assets/racecar.urdf")).expect("unable to read urdf");
+    // robot.set_joint_position_relative(&[0.,0.,1.,-1.,-1.,0.,0.,0.,0.,0.,0.,0.,]);
     robot.build();
 
     // Create buffers
