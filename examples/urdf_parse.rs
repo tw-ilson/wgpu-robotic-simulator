@@ -18,8 +18,6 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     program.get_backend_info();
 
     let mut robot = RobotDescriptor::from_str(include_str!("../assets/xarm.urdf")).expect("unable to read urdf");
-    robot.set_joint_position_relative(&[0.,0.,1.,-1.,-1.,0.,0.,0.,0.,0.,0.,0.,]);
-    robot.build();
 
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();
@@ -31,6 +29,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // Create pipeline from vertex, fragment shaders
     let pipeline = program.create_shader_program(shader_string);
 
+    let mut increment = 0.0;
     program.preloop(&mut |_| {
         println!("Called one time before the loop!");
     });
@@ -61,20 +60,21 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                 event: DeviceEvent::MouseMotion{ delta, },
                 .. // We're not using device_id currently
             } =>  {
-                program.mouse_look(
-                    delta.0 as f32,
-                    0.0
-                    // delta.1 as f32
-                    )
+                // program.mouse_look(
+                //     delta.0 as f32,
+                //     0.0
+                //     // delta.1 as f32
+                //     )
             },
             Event::RedrawRequested(window_id) if window_id == program.window.id() => {
                 //UPDATE
                 program.update(&mut |p| {
                     p.update_camera(&camera_buffer);
                     p.update_light(&light_buffer);
-                    // p.update_transforms(t_buffers, t_data)
+                    increment = (increment + 0.02) % (2.0*PI);
+                    robot.set_joint_position(&[0.,0.,increment.cos(),-increment.cos(),-increment.cos(),0.,0.,0.,0.,0.,0.,0.,], false);
+                    robot.build();
                     p.robot_assign_transform_buffers(&robot, &transform_buffers);
-                    // p.update_mesh_list(&buffer_list, &mesh_list);
                 });
 
                 // RENDER

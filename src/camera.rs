@@ -32,9 +32,9 @@ pub struct Camera {
     view_direction: glm::Vec3,
     up_vector: glm::Vec3,
     aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
+    fov: f32,
+    near: f32,
+    far: f32,
 }
 impl Camera {
     pub fn new(w: u32, h: u32) -> Self {
@@ -45,9 +45,9 @@ impl Camera {
                 glm::vec3(0.0, 1.0, 0.0),
             up_vector: glm::vec3(0.0, 0.0, 1.0),
             aspect: (w as f32) / (h as f32),
-            fovy: 45.0,
-            znear: 0.1,
-            zfar: 100.0,
+            fov: 45.0,
+            near: 0.1,
+            far: 100.0,
 
         };
         new_camera
@@ -59,11 +59,11 @@ impl Camera {
         let view = glm::look_at(
             &self.eye_posn,
             // &(self.eye_posn + self.view_direction),
-            &glm::Vec3::zeros(),
+            &glm::vec3(0., 0., self.eye_posn.z),
             &self.up_vector,
         );
         self.view_direction = glm::vec3(-self.eye_posn.x, -self.eye_posn.y, -self.eye_posn.z);
-        let proj = glm::perspective(self.aspect, self.fovy, self.znear, self.zfar);
+        let proj = glm::perspective(self.aspect, self.fov, self.near, self.far);
         OPENGL_TO_WGPU_MATRIX * proj * view
     }
     pub fn set_eye_posn(&mut self, x: f32, y: f32, z: f32) {
@@ -154,16 +154,16 @@ impl CameraController {
             _ => false,
         }
     }
-    pub fn mouse_look(&mut self, cam: &mut Camera, delta_x: f32, delta_y: f32) {
-        // let sensitivity = 0.01;
-        // let right_vec = glm::vec3(
-        //         cam.view_direction.z,
-        //         cam.view_direction.y,
-        //         -cam.view_direction.x,
-        //     );
-        // cam.view_direction = glm::rotate_vec3(&cam.view_direction, -delta_x * sensitivity, &cam.up_vector);
-        // cam.view_direction = glm::rotate_vec3(&cam.view_direction, delta_y * sensitivity, &right_vec);
-    }
+    // pub fn mouse_look(&mut self, cam: &mut Camera, delta_x: f32, delta_y: f32) {
+    //     // let sensitivity = 0.01;
+    //     // let right_vec = glm::vec3(
+    //     //         cam.view_direction.z,
+    //     //         cam.view_direction.y,
+    //     //         -cam.view_direction.x,
+    //     //     );
+    //     // cam.view_direction = glm::rotate_vec3(&cam.view_direction, -delta_x * sensitivity, &cam.up_vector);
+    //     // cam.view_direction = glm::rotate_vec3(&cam.view_direction, delta_y * sensitivity, &right_vec);
+    // }
     pub fn update(&mut self, cam:&mut Camera) {
         if self.input_state.forward {
             self.move_forward(cam)

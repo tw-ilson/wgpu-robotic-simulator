@@ -22,6 +22,7 @@ impl From<Origin> for Transform {
 
 #[derive(Default, Debug, Clone)]
 pub struct InertialBody {
+    pub origin: Origin, 
     pub transform: Transform,
     pub mass: f32,
     pub ixx: f32,
@@ -34,12 +35,16 @@ pub struct InertialBody {
 
 #[derive(Default, Debug, Clone)]
 pub struct VisualBody {
+    pub origin: Origin, 
+    pub transform: Transform,
     pub geometry: Polyhedron,
     pub material: Option<String>,
 }
+
 #[derive(Default, Debug, Clone)]
 pub struct CollisionBody {
-    // pub transform: Transform,
+    pub origin: Origin, 
+    pub transform: Transform,
     pub geometry: Polyhedron,
 }
 
@@ -80,7 +85,7 @@ pub struct Joint {
     joint_type: JointType,
     parent: usize, // index of the link
     child: usize,  // index of the link
-    // origin: Option<Origin>,
+    origin: Origin,
     transform: Transform,
     axis: Option<glm::Vec3>, // axis in joint frame
     limits: Option<JointLimits>,
@@ -245,7 +250,7 @@ fn parse_link_visual(
                 _ => {}
             },
             EndElement { name } => {
-                link.visual.geometry.transform = transform.unwrap_or_default();
+                link.visual.transform = transform.unwrap_or_default();
                 if name.local_name == "visual" {
                     return Ok(link);
                 }
@@ -263,7 +268,7 @@ fn parse_link_collision(
         let event = xml_parser.next();
         match event.clone().unwrap() {
             StartElement { name, attributes, .. } => match name.local_name.as_str() {
-                "origin" => link.collision.geometry.transform = parse_origin(event.unwrap()).unwrap().into(),
+                "origin" => link.collision.transform = parse_origin(event.unwrap()).unwrap().into(),
                 "geometry" => {
                     link.collision.geometry = parse_link_geometry(xml_parser).unwrap();
                 },
@@ -307,7 +312,7 @@ fn parse_link_inertial(
                 if name.local_name == "inertial" {
                     if let Some(mass) = mass {
                         if let Some([ixx, iyy, izz, ixy, ixz, iyz]) = inertia {
-                            link.inertial = InertialBody { transform: origin.unwrap_or_default().into(), mass, ixx, iyy, izz, ixy, ixz, iyz };
+                            link.inertial = InertialBody { origin: origin.unwrap_or_default(), transform: origin.unwrap_or_default().into(), mass, ixx, iyy, izz, ixy, ixz, iyz };
                             return Ok(link);
                         } else {panic!("inertial body requires moments of inertia!")}  
                     } else {panic!("inertial body requires mass!")}
@@ -457,6 +462,7 @@ pub fn parse_joint(
         joint_type,
         parent,
         child,
+        origin: origin.unwrap_or_default(),
         transform,
         axis,
         limits,
@@ -592,11 +598,12 @@ impl FromStr for RobotDescriptor {
 }
 
 impl RobotDescriptor {
-
-    pub fn set_joint_position_relative(&mut self, theta: &[f32]) {
+    pub fn set_joint_position(&mut self, theta: &[f32], relative: bool) {
         if theta.len() != self.joints.len() {panic!("expected {} got {}",  self.joints.len(), theta.len())}
         for (&th, j) in std::iter::zip(theta.into_iter(), &mut self.joints) {
-            println!("{}", j.joint_name);
+            if !relative {
+                j.transform = j.origin.into();
+            }
             match j.joint_type {
                 JointType::Revolute => { j.transform.rotate(j.axis.expect("revolute joint requires axis!"), th); /* check for limits */},
                 JointType::Prismatic => {j.transform.translate(th * j.axis.expect("prismatic joint requires axis"));},
@@ -606,12 +613,18 @@ impl RobotDescriptor {
             }
         }
     }
+    pub fn reset_joint_transforms(&mut self) {
+        self.links.iter_mut().for_each(|l| {
+            l.inertial.transform = l.inertial.origin.into();
+            l.visual.transform = l.visual.origin.into();
+            l.collision.transform = l.collision.origin.into();
+        })
+    }
     fn walk_children(&self, cur_link: &Link) -> Vec<(usize, Transform)> {
         self.joints
             .iter()
             .filter(|j| self.links[j.parent].link_name == cur_link.link_name)
             .map(|j| {
-                // let tf = cur_link.visual.geometry.transform * j.transform * self.links[j.child].visual.geometry.transform;
                 let tf = cur_link.inertial.transform * j.transform * self.links[j.child].inertial.transform;
                 (j.child, tf)
             })
@@ -620,6 +633,7 @@ impl RobotDescriptor {
     // Walk the DAG
     pub fn build(&mut self) {
         //next, setup transforms
+        self.reset_joint_transforms();
         let base_link = self.links.get(0).expect("No links found.unwrap()");
         let mut child_transforms = self.walk_children(base_link);
         loop {
@@ -627,7 +641,7 @@ impl RobotDescriptor {
             for (c_id, c_tf) in &child_transforms {
                 // update link with new transform
                 self.links[*c_id].inertial.transform = *c_tf;
-                self.links[*c_id].visual.geometry.transform = *c_tf;
+                self.links[*c_id].visual.transform = *c_tf;
                 // query for correct transforms of children links
                 let mut v = self.walk_children(&self.links[*c_id]);
                 v.extend(queue.unwrap_or_default());
@@ -639,8 +653,6 @@ impl RobotDescriptor {
                 break;
             }
         }
-        // self.links.iter_mut()
-        // .for_each(|l| l.visual.geometry.update_base())
     }
 }
 

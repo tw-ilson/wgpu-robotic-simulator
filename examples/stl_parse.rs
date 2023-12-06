@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, PlaneMesh, SphereMesh, MeshType, OptimizeMesh};
+use physics_engine::geometry::{Polyhedron, Transform, TriMesh, BoxMesh, CylinderMesh, PlaneMesh, SphereMesh, MeshType, OptimizeMesh};
 use physics_engine::wgpu_program::{WGPUGraphics, MeshBuffer};
 use physics_engine::graphics::GraphicsProgram;
 use physics_engine::shader::CompilePipeline;
@@ -23,10 +23,11 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // box_mesh.update_base();
     // cylinder_mesh.update_base();
     let mut mesh = Polyhedron::from("assets/meshes/teapot.stl".to_owned());
-    mesh.scale_xyz([0.01,0.01, 0.01].into());
+    // mesh.scale_xyz([0.01,0.01, 0.01].into());
     mesh.set_color([1.0,0.0,0.0].into());
-    // mesh.transform.translate([0.,0.,-1.,].into());
-    mesh.transform.rotate_rpy([PI/6., 0., 0.].into());
+    let mesh_transform = Transform::new([0.,0.,-1.,].into(),[PI/6., 0., 0.].into());
+    // mesh.transform.translate();
+    // mesh.transform.rotate_rpy();
     // mesh.update_base();
     // Create buffers
     let mesh_list = vec![mesh];
@@ -35,7 +36,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();
     let light_buffer = program.create_light_buffer();
-    let transform_buffers = program.create_transform_buffers(mesh_list.iter().map(|m| m.transform));
+    let transform_buffers = program.create_transform_buffers(mesh_list.iter().map(|m| mesh_transform));
     //
     program.create_bindings(&light_buffer, &camera_buffer, &transform_buffers);
 
@@ -74,11 +75,11 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                 event: DeviceEvent::MouseMotion{ delta, },
                 .. // We're not using device_id currently
             } =>  {
-                program.mouse_look(
-                    delta.0 as f32,
-                    0.0
-                    // delta.1 as f32
-                    )
+                // program.mouse_look(
+                //     delta.0 as f32,
+                //     0.0
+                //     // delta.1 as f32
+                //     )
             },
             Event::RedrawRequested(window_id) if window_id == program.window.id() => {
                 //UPDATE
@@ -86,7 +87,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                     p.update_camera(&camera_buffer);
                     p.update_light(&light_buffer);
                     // p.update_mesh_list(&buffer_list, &mesh_list);
-                    p.update_transforms(&transform_buffers, mesh_list.iter().map(|m| m.transform));
+                    p.update_transforms(&transform_buffers, mesh_list.iter().map(|m| mesh_transform));
                 });
 
                 // RENDER

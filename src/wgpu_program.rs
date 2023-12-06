@@ -29,7 +29,7 @@ pub struct WGPUState {
     pub camera_controller: CameraController,
     pub camera_uniform: CameraUniform,
     pub light: Light,
-    pub light_uniform: LightUniform,
+    // pub light_uniform: LightUniform,
     pub bindings: Option<Bindings>, 
 }
 
@@ -218,14 +218,15 @@ impl WGPUGraphics<'_> {
     pub fn process_keyboard(&mut self, event: &WindowEvent) -> bool{
         self.backend.camera_controller.process_keyboard(event)
     }
-    pub fn mouse_look(&mut self, mouse_x: f32, mouse_y: f32) {
-        self.backend.camera_controller.mouse_look(
-            &mut self.backend.camera, mouse_x, mouse_y)
-    }
+    // pub fn mouse_look(&mut self, mouse_x: f32, mouse_y: f32) {
+    //     self.backend.camera_controller.mouse_look(
+    //         &mut self.backend.camera, mouse_x, mouse_y)
+    // }
     
 
     //Lights
     pub fn create_light_buffer(&mut self) -> wgpu::Buffer {
+        self.backend.light.uniform.set(self.backend.camera.get_eye_posn());
         self.create_buffer(
             "Light Buffer",
             &[self.backend.light.uniform],
@@ -233,8 +234,8 @@ impl WGPUGraphics<'_> {
     }
 
     pub fn update_light(&mut self, light_buffer: &wgpu::Buffer) {
-        self.backend.light_uniform.set(self.backend.camera.get_eye_posn());
-        self.assign_uniform(light_buffer, &[self.backend.light_uniform]);
+        self.backend.light.uniform.set(self.backend.camera.get_eye_posn());
+        self.assign_uniform(light_buffer, &[self.backend.light.uniform]);
     }
 
     // Transforms
@@ -335,8 +336,6 @@ impl WGPUGraphics<'_> {
         let camera_uniform = CameraUniform::new();
         let light = Light::new(None);
 
-        let light_uniform = LightUniform::new();
-
         let mut program = Self {
             attr_map: HashMap::new(),
             width,
@@ -355,7 +354,6 @@ impl WGPUGraphics<'_> {
                 camera_controller,
                 camera_uniform,
                 light,
-                light_uniform,
                 depth_texture,
                 bindings: None,
             },
@@ -436,7 +434,7 @@ impl WGPUGraphics<'_> {
                         &self.backend.device,
                         &light_bind_layout,
                         light_buffer,
-                        "camera_bind_group"
+                        "light_bind_group"
                         );
         let transform_bind_groups = transform_buffers
                 .iter()

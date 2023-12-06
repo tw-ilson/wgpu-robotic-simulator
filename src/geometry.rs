@@ -116,7 +116,7 @@ impl fmt::Display for Transform {
 
 #[derive(Debug, Clone)]
 pub struct Polyhedron {
-    pub transform: Transform,
+    // pub transform: Transform,
     pub verts: Vec<Vertex>,
     pub indices: Vec<u32>,
 }
@@ -510,7 +510,6 @@ impl Default for Polyhedron {
     // empty polyhedron
     fn default() -> Self {
         Self {
-            transform: Transform::default(),
             verts: vec![],
             indices: vec![],
         }
@@ -525,10 +524,10 @@ impl Polyhedron {
     pub fn indices(&self) -> &Vec<u32> {
         &self.indices
     }
-    pub fn update_base(&mut self) {
-        self.verts.iter_mut().for_each(|v| *v = self.transform * (*v));
-        // self.transform = Transform::default(); // update to new frame
-    }
+    // pub fn update_base(&mut self) {
+    //     self.verts.iter_mut().for_each(|v| *v = self.transform * (*v));
+    //     // self.transform = Transform::default(); // update to new frame
+    // }
     pub fn set_color(&mut self, color: glm::Vec3) {
         self.verts.iter_mut().for_each(|v| {(*v).color = color});
     }
@@ -580,7 +579,6 @@ impl OptimizeMesh<TriMesh> for Polyhedron {
             })
             .collect();
         let poly = Self {
-            transform: Transform::default(),
             verts,
             indices,
         };
@@ -592,7 +590,6 @@ impl From<TriMesh> for Polyhedron {
     fn from(mut mesh: TriMesh) -> Self {
         mesh.calculate_normals();
         Self {
-            transform: Transform::default(),
             indices: (0..3*mesh.faces.len() as u32)
                 .collect(),
             verts: bytemuck::cast_vec::<Triangle, Vertex>(mesh.faces),

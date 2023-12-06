@@ -19,6 +19,7 @@ struct Transform {
 
 @group(0) @binding(0) 
 var<uniform> camera: CameraUniform;
+/* var<uniform> view_dir: vec3<f32>; */
 
 @group(1) @binding(0)
 var<uniform> light: Light;
@@ -46,7 +47,7 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
     out.color = model.color;
-    out.world_normal = model.normal;
+    out.world_normal = (transform.tmatrix * vec4<f32>(model.normal, 1.0)).xyz;
     
     out.world_position = (transform.tmatrix * vec4<f32>(model.position, 1.0)).xyz;
     out.clip_position = camera.view_proj * vec4<f32>(out.world_position, 1.0);
@@ -60,7 +61,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient_strength = 0.1;
     let ambient_color = light.color * ambient_strength;
 
-    let light_dir = normalize(light.position - in.world_position);
+    let light_dir = normalize(light.position - in.clip_position.xyz);
     let diffuse_strength = max(0.0, dot(in.world_normal, light_dir));
     let diffuse_color = light.color * diffuse_strength;
     /* let half_dir = normalize(view_dir + light_dir); */
