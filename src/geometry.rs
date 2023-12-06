@@ -599,29 +599,3 @@ impl From<TriMesh> for Polyhedron {
         }
     }
 }
-
-pub struct MeshBuffer {
-    pub n_indices: u32,
-    pub vertex_buffer: wgpu::Buffer, 
-    pub index_buffer: wgpu::Buffer,
-}
-
-pub trait DrawMeshBuffer<'a> {
-    fn draw_mesh(&mut self, vao: &'a MeshBuffer, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup, transform_index: u32) ;
-    fn draw_mesh_list(&mut self, vao_list: &'a Vec<MeshBuffer>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup) ;
-}
-impl <'a, 'b> DrawMeshBuffer<'b> for wgpu::RenderPass<'a> where 'b: 'a {
-    fn draw_mesh(&mut self, vao: &'b MeshBuffer, camera_bind_group: &'b wgpu::BindGroup, light_bind_group: &'b wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup, transform_index: u32) {
-        self.set_bind_group(0, &camera_bind_group, &[]);
-        self.set_bind_group(1, &light_bind_group, &[]);
-        self.set_bind_group(2, &transform_bind_group, &[/* transform_index */]);
-        self.set_vertex_buffer(0, vao.vertex_buffer.slice(..));
-        self.set_index_buffer(vao.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        self.draw_indexed(0..vao.n_indices, 0, 0..1);
-    }
-    fn draw_mesh_list(&mut self, vao_list: &'a Vec<MeshBuffer>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_group: &'a wgpu::BindGroup) {
-        for (i, buffer) in vao_list.iter().enumerate() {
-            self.draw_mesh(buffer, camera_bind_group, light_bind_group, transform_bind_group, i as u32);
-        }
-    }
-}

@@ -1,5 +1,7 @@
-use crate::geometry::{BoxMesh, CylinderMesh, SphereMesh, Polyhedron, TriMesh, Transform, self, MeshBuffer};
-use crate::wgpu_program::WGPUGraphics;
+use crate::bindings::create_uniform_bind_group;
+use crate::geometry::{BoxMesh, CylinderMesh, SphereMesh, Polyhedron, TriMesh, Transform};
+use crate::texture::Texture;
+use crate::wgpu_program::{WGPUGraphics, MeshBuffer};
 use glm;
 use itertools::Itertools;
 use std::str::FromStr;
@@ -637,22 +639,32 @@ impl RobotDescriptor {
                 break;
             }
         }
-        self.links.iter_mut()
-        .for_each(|l| l.visual.geometry.update_base())
+        // self.links.iter_mut()
+        // .for_each(|l| l.visual.geometry.update_base())
     }
 }
 
 pub trait RobotGraphics {
-    fn robot_create_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer>;
-    fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline, camera_buffer: &wgpu::Buffer, light_buffer: &wgpu::Buffer, transform_buffer: &wgpu::Buffer);
+    fn robot_create_mesh_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer>;
+    fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline);
+    fn robot_create_transform_buffers(&mut self, robot: &RobotDescriptor) -> Vec<wgpu::Buffer>;
+    fn robot_assign_transform_buffers(&mut self, robot: &RobotDescriptor, buffer: &Vec<wgpu::Buffer>);
+    // fn robot_create_bindings(&mut self, /* robot: &RobotDescriptor, */ light_buffer: &wgpu::Buffer, camera_buffer: &wgpu::Buffer, transform_buffer: &Vec<wgpu::Buffer>);
 }
 
-impl RobotGraphics for WGPUGraphics {
-    fn robot_create_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer> {
+impl RobotGraphics for WGPUGraphics<'_> {
+    fn robot_create_mesh_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer> {
         robot.links.iter().map(|link| &link.visual.geometry).map(|mesh| self.create_mesh_buffer(mesh)).collect()
     }
-    fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline, camera_buffer: &wgpu::Buffer, light_buffer: &wgpu::Buffer, transform_buffer: &wgpu::Buffer) {
-        let buffers = self.robot_create_buffers(robot);
-        self.draw_mesh_list(pipeline, &buffers, camera_buffer, light_buffer, transform_buffer);
+    fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline) {
+        let buffers = self.robot_create_mesh_buffers(robot);
+        self.draw_mesh_list(pipeline, &buffers);
+    }
+    fn robot_create_transform_buffers(&mut self, robot: &RobotDescriptor) -> Vec<wgpu::Buffer> {
+        self.create_transform_buffers(robot.links.iter().map(|l| l.inertial.transform))
+    }
+    fn robot_assign_transform_buffers(&mut self, robot: &RobotDescriptor, buffers: &Vec<wgpu::Buffer>) {
+        // std::iter::zip(buffers, &robot.links).for_each(|(b,l)| self.assign_uniform(b, &[l.inertial.transform]))
+        self.update_transforms(buffers, robot.links.iter().map(|l| l.inertial.transform))
     }
 }

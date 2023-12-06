@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
-use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, MeshBuffer, PlaneMesh, SphereMesh, MeshType, OptimizeMesh};
-use physics_engine::wgpu_program::WGPUGraphics;
+use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh, PlaneMesh, SphereMesh, MeshType, OptimizeMesh};
+use physics_engine::wgpu_program::{WGPUGraphics, MeshBuffer};
 use physics_engine::graphics::GraphicsProgram;
 use physics_engine::shader::CompilePipeline;
 use physics_engine::bindings::*;
@@ -22,11 +22,11 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // cylinder_mesh.transform.rotate_rpy([-1.5708, 0.,0.].into());
     // box_mesh.update_base();
     // cylinder_mesh.update_base();
-    let mut mesh = Polyhedron::from("assets/meshes/finger_tip.stl".to_owned());
+    let mut mesh = Polyhedron::from("assets/meshes/teapot.stl".to_owned());
     mesh.scale_xyz([0.01,0.01, 0.01].into());
     mesh.set_color([1.0,0.0,0.0].into());
     // mesh.transform.translate([0.,0.,-1.,].into());
-    // mesh.transform.rotate_rpy([PI/6., 0., 0.].into());
+    mesh.transform.rotate_rpy([PI/6., 0., 0.].into());
     // mesh.update_base();
     // Create buffers
     let mesh_list = vec![mesh];
@@ -35,16 +35,9 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();
     let light_buffer = program.create_light_buffer();
-    let transform_buffer = program.create_transform_buffer(&mesh_list);
-
-    program.new_bind_group_layout("camera_bind_group", &[uniform_layout_entry()]);
-    program.new_bind_group_layout("light_bind_group", &[uniform_layout_entry()]);
-    program.new_bind_group_layout("transform_bind_group", &[uniform_layout_entry()]);
-    program.create_bind_groups(&[
-                               &camera_buffer,
-                               &light_buffer,
-                               &transform_buffer,
-    ]);
+    let transform_buffers = program.create_transform_buffers(mesh_list.iter().map(|m| m.transform));
+    //
+    program.create_bindings(&light_buffer, &camera_buffer, &transform_buffers);
 
     // std::process::exit(0);
     
@@ -93,11 +86,12 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                     p.update_camera(&camera_buffer);
                     p.update_light(&light_buffer);
                     // p.update_mesh_list(&buffer_list, &mesh_list);
+                    p.update_transforms(&transform_buffers, mesh_list.iter().map(|m| m.transform));
                 });
 
                 // RENDER
                 program.render(&mut |p| {
-                    p.draw_mesh_list(&pipeline, &buffer_list, &camera_buffer, &light_buffer, &transform_buffer);
+                    p.draw_mesh_list(&pipeline, &buffer_list);
                     // submit will accept anything that implements IntoIter
                 });
             }

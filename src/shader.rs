@@ -16,7 +16,7 @@ pub trait CompilePipeline {
     ) -> wgpu::RenderPipeline;
 }
 
-impl CompilePipeline for WGPUGraphics {
+impl CompilePipeline for WGPUGraphics<'_> {
     fn compile_wgsl(&mut self, name: &str, source: &str) -> wgpu::ShaderModule {
         self.device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -45,11 +45,13 @@ impl CompilePipeline for WGPUGraphics {
         shader_source: &str,
     ) -> wgpu::RenderPipeline {
         let shader_module = self.compile_wgsl("vertex/fragment shader", shader_source);
-        let bind_group_layouts: Vec<&wgpu::BindGroupLayout> =
-            self.backend.bindings.bind_layouts.as_slice().iter().collect();
+        let bind_group_layouts = [
+            self.camera_bind_layout(),
+            self.light_bind_layout(),
+            self.transform_bind_layout()];
         let pipeline_layout_desc = &wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: bind_group_layouts.as_slice(),
+            bind_group_layouts: &bind_group_layouts,
             push_constant_ranges: &[],
         };
         let pipeline_layout = self.backend.device.create_pipeline_layout(&pipeline_layout_desc);

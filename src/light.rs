@@ -42,6 +42,6 @@ impl LightUniform {
         }
     }
     pub fn new() -> Self {
-        Self { position: glm::vec3(1.0, 1.0, 1.0), _padding: 0, color: glm::vec3(1.,1.,1.), _padding2: 0 }
+        Self { position: glm::vec3(0.0, 0.0, 0.0), _padding: 0, color: glm::vec3(1.,1.,1.), _padding2: 0 }
     }
 }
