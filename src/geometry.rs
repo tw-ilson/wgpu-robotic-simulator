@@ -538,6 +538,16 @@ impl Polyhedron {
     pub fn scale_xyz(&mut self, factor: glm::Vec3) {
         self.verts.iter_mut().for_each(|v| v.position = glm::diagonal3x3(&factor) * v.position);
     }
+    pub fn join(mut self, other: Polyhedron) -> Self {
+        self.verts.extend(other.verts());
+        self.indices.extend(other.indices.iter().map(|i| i + self.verts.len() as u32));
+        self
+    }
+    pub fn recenter(&mut self) {
+        let avg_posn = glm::diagonal3x3(&glm::Vec3::from([1.0/self.verts.len() as f32;3])) 
+            * self.verts.iter().fold(glm::Vec3::zeros(), |acc, v| acc + v.position);
+        self.verts.iter_mut().for_each(|v| v.position -= avg_posn);
+    }
 }
 
 impl From<String> for Polyhedron {

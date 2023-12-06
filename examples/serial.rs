@@ -1,6 +1,3 @@
-// Add this to your Cargo.toml file under [dependencies]
-// serialport = "4"
-
 use std::io::{self, Write};
 use std::path::Path;
 use std::ffi::{OsStr, OsString};

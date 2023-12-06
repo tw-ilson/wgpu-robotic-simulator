@@ -22,12 +22,13 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // cylinder_mesh.transform.rotate_rpy([-1.5708, 0.,0.].into());
     // box_mesh.update_base();
     // cylinder_mesh.update_base();
-    let mut mesh = Polyhedron::from("assets/meshes/finger_tip.stl".to_owned());
+    let mut mesh = Polyhedron::from("assets/meshes/leg_project - proximal_outer-1.STL".to_owned());
+    mesh.recenter();
     mesh.scale_xyz([0.01,0.01, 0.01].into());
-    mesh.set_color([1.0,0.0,0.0].into());
+    mesh.set_color([0.1,0.1,0.1].into());
     // mesh.transform.translate([0.,0.,-1.,].into());
-    // mesh.transform.rotate_rpy([PI/6., 0., 0.].into());
-    // mesh.update_base();
+    mesh.transform.rotate_rpy([0., PI/2., 0.].into());
+    mesh.update_base();
     // Create buffers
     let mesh_list = vec![mesh];
     let buffer_list:Vec<MeshBuffer> = mesh_list.iter().map(|mesh| program.create_mesh_buffer(mesh)).collect();

@@ -6,6 +6,7 @@ pub mod geometry;
 pub mod urdf;
 pub mod graphics;
 pub mod bindings;
+// pub mod mechanism;
 // pub mod physics;
 pub mod util;
 pub mod wgpu_program;

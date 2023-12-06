@@ -74,13 +74,13 @@ pub struct JointDynamics {
 
 #[derive(Debug, Clone)]
 pub struct Joint {
-    joint_name: String,
-    joint_type: JointType,
-    parent: usize, // index of the link
-    child: usize,  // index of the link
+    pub joint_name: String,
+    pub joint_type: JointType,
+    pub parent: usize, // index of the link
+    pub child: usize,  // index of the link
     // origin: Option<Origin>,
-    transform: Transform,
-    axis: Option<glm::Vec3>, // axis in joint frame
+    pub transform: Transform,
+    pub axis: Option<glm::Vec3>, // axis in joint frame
     limits: Option<JointLimits>,
     dynamics: Option<JointDynamics>
 }
