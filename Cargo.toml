@@ -25,7 +25,7 @@ rand = "0.8.5"
 wgpu = { version="0.18.0", features=["glsl", "expose-ids"] }
 winit = "0.28.7"
 xml-rs = "0.8.19"
-anyhow = "1.0.75"
+anyhow = {version="1.0.75", features=["backtrace"]}
 rayon = "1.8.0"
 regex = "1.10.2"
 [dependencies.image]

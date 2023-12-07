@@ -1,18 +1,17 @@
-#![allow(dead_code)] 
+#![allow(dead_code)]
 
-pub mod camera;
-pub mod light;
-pub mod geometry;
-pub mod urdf;
-pub mod graphics;
 pub mod bindings;
+pub mod camera;
+pub mod geometry;
+pub mod graphics;
+pub mod light;
+pub mod urdf;
 // pub mod physics;
-pub mod util;
-pub mod wgpu_program;
 pub mod shader;
 pub mod texture;
+pub mod util;
+pub mod wgpu_program;
 extern crate nalgebra_glm as glm;
 
 // #[cfg(not(target_arch = "wasm32"))]
 // pub mod opengl_program;
-

@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use physics_engine::shader::CreatePipeline;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -44,7 +45,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 
 // put them on the heap
-fn vertex_specification() -> (Vec<Vertex>, Vec<u16>) {
+fn vertex_specification() -> (Vec<Vertex>, Vec<u32>) {
     (
         vec![
             Vertex {
@@ -69,13 +70,11 @@ fn vertex_specification() -> (Vec<Vertex>, Vec<u16>) {
 
 pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // Create buffer
-    unsafe {
-        program.create_shader_program(SHADER_STRING);
-    }
+    let pipeline = program.create_render_pipeline(SHADER_STRING).expect("failed to get render pipeline!");
 
     let (vertices, indices) = vertex_specification();
-    let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(vertices);
-    let index_buffer: wgpu::Buffer = program.create_index_buffer(indices);
+    let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(&vertices);
+    let index_buffer: wgpu::Buffer = program.create_index_buffer(&indices);
 
     program.preloop(&mut |p| {
         println!("Called one time before the loop!");
@@ -120,11 +119,10 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                                 occlusion_query_set: None,
                                 timestamp_writes: None
                             });
-                        let pipeline = p.pipeline();
-                        render_pass.set_pipeline(pipeline);
+                        render_pass.set_pipeline(&pipeline);
                         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                        render_pass.draw_indexed(0..p.n_indices(), 0, 0..1);
+                        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        render_pass.draw_indexed(0..indices.len() as u32, 0, 0..1);
                     }
 
                     // submit will accept anything that implements IntoIter

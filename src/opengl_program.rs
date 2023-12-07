@@ -1,4 +1,3 @@
-
 // use crate::graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram};
 extern crate gl;
 extern crate sdl2;

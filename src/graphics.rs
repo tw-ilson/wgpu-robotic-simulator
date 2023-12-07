@@ -9,8 +9,12 @@ pub struct Vertex {
     pub normal: glm::Vec3,
 }
 impl From<glm::Vec3> for Vertex {
-    fn from(position:glm::Vec3) -> Self {
-        Self { position, color: glm::vec3(1.,1.,1.), normal: glm::vec3(0., 0., 0.) }
+    fn from(position: glm::Vec3) -> Self {
+        Self {
+            position,
+            color: glm::vec3(1., 1., 1.),
+            normal: glm::vec3(0., 0., 0.),
+        }
     }
 }
 

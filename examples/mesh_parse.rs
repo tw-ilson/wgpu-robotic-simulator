@@ -1,12 +1,10 @@
 use std::f32::consts::PI;
 
-use physics_engine::urdf::*;
-use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh};
+use physics_engine::geometry::{Polyhedron, Transform, TriMesh, BoxMesh, CylinderMesh, PlaneMesh, SphereMesh, MeshType, OptimizeMesh};
 use physics_engine::wgpu_program::{WGPUGraphics, MeshBuffer};
 use physics_engine::graphics::GraphicsProgram;
 use physics_engine::shader::CompilePipeline;
 use physics_engine::bindings::*;
-use std::str::FromStr;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -15,21 +13,39 @@ use winit::{
 pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     let shader_string = include_str!("../shaders/shader.wgsl");
 
-    program.get_backend_info();
+    use std::env;
+    let args: Vec<String> = env::args().collect();
+    dbg!(&args);
 
-    let mut robot = RobotDescriptor::from_str(include_str!("../assets/xarm.urdf")).expect("unable to read urdf");
+    // program.get_backend_info();
+
+    // let mut box_mesh = Polyhedron::from(TriMesh::create_box([1.,1.,2.].into()));
+    // let mut cylinder_mesh = Polyhedron::from(TriMesh::create_cylinder(1., 2., 30));
+    // let mut sphere_mesh = Polyhedron::optimize(TriMesh::create_sphere(1.0, 20, 20));
+    // let mut plane_mesh = Polyhedron::from(TriMesh::create_plane());
+    let mut mesh = Polyhedron::from(args[1].to_owned());
+    // mesh.scale_xyz([0.01,0.01, 0.01].into());
+    mesh.set_color([1.0,0.0,0.0].into());
+    let mesh_transform = Transform::new([0.,0.,-1.,].into(),[PI/6., 0., 0.].into());
+    // mesh.transform.translate();
+    // mesh.transform.rotate_rpy();
+    // mesh.update_base();
+    // Create buffers
+    let mesh_list = vec![mesh];
+    let buffer_list:Vec<MeshBuffer> = mesh_list.iter().map(|mesh| program.create_mesh_buffer(mesh)).collect();
 
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();
     let light_buffer = program.create_light_buffer();
-    let transform_buffers = program.robot_create_transform_buffers(&robot);
+    let transform_buffers = program.create_transform_buffers(mesh_list.iter().map(|m| mesh_transform));
     //
     program.create_bindings(&light_buffer, &camera_buffer, &transform_buffers);
+
+    // std::process::exit(0);
     
     // Create pipeline from vertex, fragment shaders
     let pipeline = program.create_shader_program(shader_string);
 
-    let mut increment = 0.0;
     program.preloop(&mut |_| {
         println!("Called one time before the loop!");
     });
@@ -71,15 +87,14 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                 program.update(&mut |p| {
                     p.update_camera(&camera_buffer);
                     p.update_light(&light_buffer);
-                    increment = (increment + 0.02) % (2.0*PI);
-                    robot.set_joint_position(&[0.,0.,increment.cos(),-increment.cos(),-increment.cos(),0.,0.,0.,0.,0.,0.,0.,], false);
-                    robot.build();
-                    p.robot_assign_transform_buffers(&robot, &transform_buffers);
+                    // p.update_mesh_list(&buffer_list, &mesh_list);
+                    p.update_transforms(&transform_buffers, mesh_list.iter().map(|m| mesh_transform));
                 });
 
                 // RENDER
                 program.render(&mut |p| {
-                    p.draw_robot(&robot, &pipeline);
+                    p.draw_mesh_list(&pipeline, &buffer_list);
+                    // submit will accept anything that implements IntoIter
                 });
             }
             Event::MainEventsCleared => program.window.request_redraw(),

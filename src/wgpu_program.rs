@@ -1,17 +1,22 @@
 use crate::{
-    texture::Texture,
     bindings::*,
     camera::{Camera, CameraController, CameraUniform},
+    geometry::{Polyhedron, Transform},
+    graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram, Vertex},
     light::{Light, LightUniform},
-    graphics::{Color, ContextFlags, GraphicsContext, GraphicsProgram, Vertex}, 
-    geometry::{Transform, Polyhedron, },
+    texture::Texture,
 };
-use itertools::Itertools;
 use bytemuck::{cast_slice, Pod, Zeroable};
-use std::collections::HashMap;
+use itertools::Itertools;
 use std::borrow::Borrow;
+use std::collections::HashMap;
 // use rayon::prelude::*;
-use winit::{dpi::PhysicalSize, event_loop::EventLoop, event::WindowEvent, window::{Window, WindowBuilder}};
+use winit::{
+    dpi::PhysicalSize,
+    event::WindowEvent,
+    event_loop::EventLoop,
+    window::{Window, WindowBuilder},
+};
 
 pub struct WGPUState {
     // Device Configuration state
@@ -30,7 +35,7 @@ pub struct WGPUState {
     pub camera_uniform: CameraUniform,
     pub light: Light,
     // pub light_uniform: LightUniform,
-    pub bindings: Option<Bindings>, 
+    pub bindings: Option<Bindings>,
 }
 
 fn retrieve_adapter_device(
@@ -53,8 +58,8 @@ fn retrieve_adapter_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: wgpu::Features::TEXTURE_BINDING_ARRAY,
-                                                   // Need to do the spatial transforms on
-                                                   // shader!
+                    // Need to do the spatial transforms on
+                    // shader!
                     // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                     limits: if cfg!(target_arch = "wasm32") {
                         wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
@@ -87,7 +92,6 @@ impl Vertex {
     }
 }
 
-
 #[allow(dead_code)]
 pub type WGPUGraphics<'a> = GraphicsContext<WGPUState, Window, wgpu::Buffer>;
 impl WGPUGraphics<'_> {
@@ -117,7 +121,7 @@ impl WGPUGraphics<'_> {
         &self.backend.config
     }
     pub fn camera(&mut self) -> &mut Camera {
-        &mut self.backend.camera 
+        &mut self.backend.camera
     }
     pub fn camera_controller(&mut self) -> &mut CameraController {
         &mut self.backend.camera_controller
@@ -133,7 +137,12 @@ impl WGPUGraphics<'_> {
     }
     pub fn transform_bind_groups(&self) -> &Vec<wgpu::BindGroup> {
         // &self.bindings().transform_bind_groups
-        &self.backend.bindings.as_ref().unwrap().transform_bind_groups
+        &self
+            .backend
+            .bindings
+            .as_ref()
+            .unwrap()
+            .transform_bind_groups
     }
     pub fn camera_bind_layout(&self) -> &wgpu::BindGroupLayout {
         &self.backend.bindings.as_ref().unwrap().camera_bind_layout
@@ -142,7 +151,12 @@ impl WGPUGraphics<'_> {
         &self.backend.bindings.as_ref().unwrap().light_bind_layout
     }
     pub fn transform_bind_layout(&self) -> &wgpu::BindGroupLayout {
-        &self.backend.bindings.as_ref().unwrap().transform_bind_layout
+        &self
+            .backend
+            .bindings
+            .as_ref()
+            .unwrap()
+            .transform_bind_layout
     }
 
     // helpers to create buffers
@@ -153,7 +167,8 @@ impl WGPUGraphics<'_> {
         usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer {
         use wgpu::util::DeviceExt;
-        let buffer = self.backend
+        let buffer = self
+            .backend
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(name),
@@ -180,11 +195,13 @@ impl WGPUGraphics<'_> {
         )
     }
     pub fn assign_uniform<T: Zeroable + Pod>(&self, buffer: &wgpu::Buffer, data: &[T]) {
-        self.backend.queue.write_buffer(buffer, 0, bytemuck::cast_slice(data));
+        self.backend
+            .queue
+            .write_buffer(buffer, 0, bytemuck::cast_slice(data));
     }
     //this is a hack to get the transform on Metal and Vulkan
-    pub fn assign_texture<T: Zeroable + Pod>(&self, texture: Texture, data:  &[T]) {
-        self.backend.queue.write_texture(    
+    pub fn assign_texture<T: Zeroable + Pod>(&self, texture: Texture, data: &[T]) {
+        self.backend.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &texture.texture,
                 mip_level: 0,
@@ -197,13 +214,16 @@ impl WGPUGraphics<'_> {
                 bytes_per_row: Some(4 * texture.size.width),
                 rows_per_image: Some(texture.size.height),
             },
-            texture.size);
+            texture.size,
+        );
     }
-    // pub fn assign_texture_array<T: Zeroable + Pod>(&self, texture_array: 
+    // pub fn assign_texture_array<T: Zeroable + Pod>(&self, texture_array:
 
     // Camera
     pub fn create_camera_buffer(&mut self) -> wgpu::Buffer {
-        self.backend.camera.update_view_proj(&mut self.backend.camera_uniform);
+        self.backend
+            .camera
+            .update_view_proj(&mut self.backend.camera_uniform);
         self.create_buffer(
             "Camera Buffer",
             &[self.backend.camera_uniform],
@@ -211,55 +231,68 @@ impl WGPUGraphics<'_> {
         )
     }
     pub fn update_camera(&mut self, camera_buffer: &wgpu::Buffer) {
-        self.backend.camera_controller.update(&mut self.backend.camera);
-        self.backend.camera.update_view_proj(&mut self.backend.camera_uniform);
+        self.backend
+            .camera_controller
+            .update(&mut self.backend.camera);
+        self.backend
+            .camera
+            .update_view_proj(&mut self.backend.camera_uniform);
         self.assign_uniform(camera_buffer, &[self.backend.camera_uniform]);
     }
-    pub fn process_keyboard(&mut self, event: &WindowEvent) -> bool{
+    pub fn process_keyboard(&mut self, event: &WindowEvent) -> bool {
         self.backend.camera_controller.process_keyboard(event)
     }
     // pub fn mouse_look(&mut self, mouse_x: f32, mouse_y: f32) {
     //     self.backend.camera_controller.mouse_look(
     //         &mut self.backend.camera, mouse_x, mouse_y)
     // }
-    
 
     //Lights
     pub fn create_light_buffer(&mut self) -> wgpu::Buffer {
-        self.backend.light.uniform.set(self.backend.camera.get_eye_posn());
+        self.backend
+            .light
+            .uniform
+            .set(self.backend.camera.get_eye_posn());
         self.create_buffer(
             "Light Buffer",
             &[self.backend.light.uniform],
-            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        )
     }
 
     pub fn update_light(&mut self, light_buffer: &wgpu::Buffer) {
-        self.backend.light.uniform.set(self.backend.camera.get_eye_posn());
+        self.backend
+            .light
+            .uniform
+            .set(self.backend.camera.get_eye_posn());
         self.assign_uniform(light_buffer, &[self.backend.light.uniform]);
     }
 
     // Transforms
     pub fn update_transforms<T>(&mut self, t_buffers: &Vec<wgpu::Buffer>, t_data: T)
-        where 
-            T:IntoIterator,
-            T::Item: Borrow<Transform>
+    where
+        T: IntoIterator,
+        T::Item: Borrow<Transform>,
     {
-        std::iter::zip(t_buffers, t_data).for_each(|(b,t)| self.assign_uniform(b, &[*t.borrow()]))
+        std::iter::zip(t_buffers, t_data).for_each(|(b, t)| self.assign_uniform(b, &[*t.borrow()]))
     }
 
     pub fn create_transform_buffers<T>(&mut self, t_list: T) -> Vec<wgpu::Buffer>
-        where
-            T: IntoIterator,
-            T::Item: Borrow<Transform>,
-        {
-            t_list.into_iter().map(|t| {
+    where
+        T: IntoIterator,
+        T::Item: Borrow<Transform>,
+    {
+        t_list
+            .into_iter()
+            .map(|t| {
                 self.create_buffer(
-                "Transform Buffer",
-                &[*t.borrow()],
-                wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)}
-            ).collect()
+                    "Transform Buffer",
+                    &[*t.borrow()],
+                    wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                )
+            })
+            .collect()
     }
-    
 
     // Mesh
     pub fn create_mesh_buffer(&mut self, poly: &Polyhedron) -> MeshBuffer {
@@ -273,10 +306,13 @@ impl WGPUGraphics<'_> {
     //constructor
     pub fn new(width: u32, height: u32, event: &EventLoop<()>) -> Self {
         // let window = Window::new(event).expect("unable to create winit window");
-        let window = WindowBuilder::new().build(event).expect("unable to create winit window");
-        if window.set_cursor_grab(winit::window::CursorGrabMode::Locked).is_err() {
-
-        }
+        let window = WindowBuilder::new()
+            .build(event)
+            .expect("unable to create winit window");
+        if window
+            .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+            .is_err()
+        {}
         window.set_cursor_visible(false);
 
         // #[cfg(target_arch = "wasm32")]
@@ -318,7 +354,7 @@ impl WGPUGraphics<'_> {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(swapchain_capabilities.formats[0]);
-        
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
@@ -370,93 +406,124 @@ impl WGPUGraphics<'_> {
             },
         };
 
-
         program.default_state();
         program
     }
 
-    pub fn draw_mesh_list(&mut self, pipeline: &wgpu::RenderPipeline, buffer_list: &Vec<MeshBuffer>) {
+    pub fn draw_mesh_list(
+        &mut self,
+        pipeline: &wgpu::RenderPipeline,
+        buffer_list: &Vec<MeshBuffer>,
+    ) {
         // self.set_clear_color((1.0, 1.0, 1.0, 1.0));
         let output = self
-            .backend.surface
+            .backend
+            .surface
             .get_current_texture()
             .expect("failed to get current texture");
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder =
-            self.backend.device
+            self.backend
+                .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Render Encoder"),
                 });
         {
-            let mut render_pass =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.2,
-                                b: 0.3,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.backend.depth_texture.view,
-                        depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.backend.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
             render_pass.set_pipeline(pipeline);
 
-            render_pass.draw_mesh_list(&buffer_list, self.camera_bind_group(), self.light_bind_group(), self.transform_bind_groups())
+            render_pass.draw_mesh_list(
+                &buffer_list,
+                self.camera_bind_group(),
+                self.light_bind_group(),
+                self.transform_bind_groups(),
+            )
         }
         self.queue().submit(std::iter::once(encoder.finish()));
         output.present();
     }
-    pub fn create_bindings(&mut self, light_buffer: &wgpu::Buffer, camera_buffer: &wgpu::Buffer, transform_buffers: &Vec<wgpu::Buffer>) {
+    pub fn create_bindings(
+        &mut self,
+        light_buffer: &wgpu::Buffer,
+        camera_buffer: &wgpu::Buffer,
+        transform_buffers: &Vec<wgpu::Buffer>,
+    ) {
         use crate::bindings::*;
-        let camera_bind_layout = new_uniform_bind_group_layout(&self.backend.device, "camera_bind_layout", &[uniform_layout_entry()]);
-        let light_bind_layout =  new_uniform_bind_group_layout(&self.backend.device, "light_bind_layout", &[uniform_layout_entry()]);
-        let transform_bind_layout =  new_uniform_bind_group_layout(&self.backend.device, "transform_bind_layout", &[uniform_layout_entry()]);
+        let camera_bind_layout = new_uniform_bind_group_layout(
+            &self.backend.device,
+            "camera_bind_layout",
+            &[uniform_layout_entry()],
+        );
+        let light_bind_layout = new_uniform_bind_group_layout(
+            &self.backend.device,
+            "light_bind_layout",
+            &[uniform_layout_entry()],
+        );
+        let transform_bind_layout = new_uniform_bind_group_layout(
+            &self.backend.device,
+            "transform_bind_layout",
+            &[uniform_layout_entry()],
+        );
         let camera_bind_group = create_uniform_bind_group(
-                        &self.backend.device,
-                        &camera_bind_layout,
-                        camera_buffer,
-                        "camera_bind_group"
-                        );
+            &self.backend.device,
+            &camera_bind_layout,
+            camera_buffer,
+            "camera_bind_group",
+        );
         let light_bind_group = create_uniform_bind_group(
-                        &self.backend.device,
-                        &light_bind_layout,
-                        light_buffer,
-                        "light_bind_group"
-                        );
+            &self.backend.device,
+            &light_bind_layout,
+            light_buffer,
+            "light_bind_group",
+        );
         let transform_bind_groups = transform_buffers
-                .iter()
-                .enumerate()
-                .map(|(i,buffer)| 
-                     create_uniform_bind_group(
-                         &self.backend.device,
-                         &transform_bind_layout,
-                         buffer,
-                         &format!("transform_bind_group_{}", i)))
-                .collect();
-        self.backend.bindings = Some(
-            Bindings {
-                camera_bind_layout, 
-                light_bind_layout,
-                camera_bind_group,
-                light_bind_group,
-                transform_bind_layout,
-                transform_bind_groups,
-            });
+            .iter()
+            .enumerate()
+            .map(|(i, buffer)| {
+                create_uniform_bind_group(
+                    &self.backend.device,
+                    &transform_bind_layout,
+                    buffer,
+                    &format!("transform_bind_group_{}", i),
+                )
+            })
+            .collect();
+        self.backend.bindings = Some(Bindings {
+            camera_bind_layout,
+            light_bind_layout,
+            camera_bind_group,
+            light_bind_group,
+            transform_bind_layout,
+            transform_bind_groups,
+        });
     }
-
 }
 
 impl GraphicsProgram for WGPUGraphics<'_> {
@@ -464,26 +531,51 @@ impl GraphicsProgram for WGPUGraphics<'_> {
     fn get_backend_info(&self) {
         println!("Device features:\n{:#?}", self.device().features());
         println!("Adapter info: \n{:#?}", self.adapter().get_info());
-        println!("Adapter features:\n{:#?}", self.adapter().features());
+        // println!("Adapter features:\n{:#?}", self.adapter().features());
     }
     fn default_state(&mut self) {
-        self.backend.surface.configure(&self.backend.device, self.config());
+        self.backend
+            .surface
+            .configure(&self.backend.device, self.config());
     }
 }
 
 pub struct MeshBuffer {
     pub n_indices: u32,
-    pub vertex_buffer: wgpu::Buffer, 
+    pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
 }
 
 pub trait DrawMeshBuffer<'a> {
-    fn draw_mesh(&mut self, vao: &'a MeshBuffer, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_group: &'a [wgpu::BindGroup], transform_index: usize) ;
-    fn draw_mesh_list(&mut self, vao_list: &'a Vec<MeshBuffer>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_group: &'a [wgpu::BindGroup]) ;
+    fn draw_mesh(
+        &mut self,
+        vao: &'a MeshBuffer,
+        camera_bind_group: &'a wgpu::BindGroup,
+        light_bind_group: &'a wgpu::BindGroup,
+        transform_bind_group: &'a [wgpu::BindGroup],
+        transform_index: usize,
+    );
+    fn draw_mesh_list(
+        &mut self,
+        vao_list: &'a Vec<MeshBuffer>,
+        camera_bind_group: &'a wgpu::BindGroup,
+        light_bind_group: &'a wgpu::BindGroup,
+        transform_bind_group: &'a [wgpu::BindGroup],
+    );
 }
 
-impl <'a, 'b> DrawMeshBuffer<'b> for wgpu::RenderPass<'a> where 'b: 'a {
-    fn draw_mesh(&mut self, vao: &'b MeshBuffer, camera_bind_group: &'b wgpu::BindGroup, light_bind_group: &'b wgpu::BindGroup, transform_bind_groups: &'a [wgpu::BindGroup], transform_index: usize) {
+impl<'a, 'b> DrawMeshBuffer<'b> for wgpu::RenderPass<'a>
+where
+    'b: 'a,
+{
+    fn draw_mesh(
+        &mut self,
+        vao: &'b MeshBuffer,
+        camera_bind_group: &'b wgpu::BindGroup,
+        light_bind_group: &'b wgpu::BindGroup,
+        transform_bind_groups: &'a [wgpu::BindGroup],
+        transform_index: usize,
+    ) {
         self.set_bind_group(0, &camera_bind_group, &[]);
         self.set_bind_group(1, &light_bind_group, &[]);
         self.set_bind_group(2, &transform_bind_groups[transform_index], &[]);
@@ -491,9 +583,21 @@ impl <'a, 'b> DrawMeshBuffer<'b> for wgpu::RenderPass<'a> where 'b: 'a {
         self.set_index_buffer(vao.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         self.draw_indexed(0..vao.n_indices, 0, 0..1);
     }
-    fn draw_mesh_list(&mut self, vao_list: &'a Vec<MeshBuffer>, camera_bind_group: &'a wgpu::BindGroup, light_bind_group: &'a wgpu::BindGroup, transform_bind_groups: &'a [wgpu::BindGroup]) {
+    fn draw_mesh_list(
+        &mut self,
+        vao_list: &'a Vec<MeshBuffer>,
+        camera_bind_group: &'a wgpu::BindGroup,
+        light_bind_group: &'a wgpu::BindGroup,
+        transform_bind_groups: &'a [wgpu::BindGroup],
+    ) {
         for (i, buffer) in vao_list.iter().enumerate() {
-            self.draw_mesh(buffer, camera_bind_group, light_bind_group, transform_bind_groups, i);
+            self.draw_mesh(
+                buffer,
+                camera_bind_group,
+                light_bind_group,
+                transform_bind_groups,
+                i,
+            );
         }
     }
 }

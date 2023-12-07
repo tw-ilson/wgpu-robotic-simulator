@@ -1,7 +1,7 @@
 use crate::bindings::create_uniform_bind_group;
-use crate::geometry::{BoxMesh, CylinderMesh, SphereMesh, Polyhedron, TriMesh, Transform};
+use crate::geometry::{BoxMesh, CylinderMesh, Polyhedron, SphereMesh, Transform, TriMesh};
 use crate::texture::Texture;
-use crate::wgpu_program::{WGPUGraphics, MeshBuffer};
+use crate::wgpu_program::{MeshBuffer, WGPUGraphics};
 use glm;
 use itertools::Itertools;
 use std::str::FromStr;
@@ -22,7 +22,7 @@ impl From<Origin> for Transform {
 
 #[derive(Default, Debug, Clone)]
 pub struct InertialBody {
-    pub origin: Origin, 
+    pub origin: Origin,
     pub transform: Transform,
     pub mass: f32,
     pub ixx: f32,
@@ -35,7 +35,7 @@ pub struct InertialBody {
 
 #[derive(Default, Debug, Clone)]
 pub struct VisualBody {
-    pub origin: Origin, 
+    pub origin: Origin,
     pub transform: Transform,
     pub geometry: Polyhedron,
     pub material: Option<String>,
@@ -43,7 +43,7 @@ pub struct VisualBody {
 
 #[derive(Default, Debug, Clone)]
 pub struct CollisionBody {
-    pub origin: Origin, 
+    pub origin: Origin,
     pub transform: Transform,
     pub geometry: Polyhedron,
 }
@@ -89,7 +89,7 @@ pub struct Joint {
     transform: Transform,
     axis: Option<glm::Vec3>, // axis in joint frame
     limits: Option<JointLimits>,
-    dynamics: Option<JointDynamics>
+    dynamics: Option<JointDynamics>,
 }
 #[derive(Default, Debug, Clone)]
 pub struct RobotDescriptor {
@@ -105,7 +105,8 @@ fn parse_3f(s: &str) -> Result<glm::Vec3, ParseRobotError> {
     let v: [f32; 3] = s
         .split_whitespace()
         .map(|ns| ns.parse::<f32>())
-        .collect::<Result<Vec<f32>, _>>().unwrap()
+        .collect::<Result<Vec<f32>, _>>()
+        .unwrap()
         .try_into()
         .unwrap();
     Ok(v.into())
@@ -114,18 +115,19 @@ fn parse_4f(s: &str) -> Result<glm::Vec4, ParseRobotError> {
     let v: [f32; 4] = s
         .split_whitespace()
         .map(|ns| ns.parse::<f32>())
-        .collect::<Result<Vec<f32>, _>>().unwrap()
+        .collect::<Result<Vec<f32>, _>>()
+        .unwrap()
         .try_into()
         .unwrap();
     Ok(v.into())
 }
 fn parse_origin(origin_event: XmlEvent) -> Result<Origin, ParseRobotError> {
-    if let XmlEvent::StartElement {
-        attributes,
-        ..
-    } = origin_event
-    {
-        let xyz_attr = attributes.iter().find(|&a| a.name.local_name == "xyz").ok_or("expected attribute xyz").unwrap();
+    if let XmlEvent::StartElement { attributes, .. } = origin_event {
+        let xyz_attr = attributes
+            .iter()
+            .find(|&a| a.name.local_name == "xyz")
+            .ok_or("expected attribute xyz")
+            .unwrap();
         let xyz = parse_3f(&xyz_attr.value).unwrap();
         let rpy_attr = attributes.iter().find(|&a| a.name.local_name == "rpy");
         let rpy = if let Some(attr) = rpy_attr {
@@ -140,10 +142,7 @@ fn parse_origin(origin_event: XmlEvent) -> Result<Origin, ParseRobotError> {
     }
 }
 
-
-fn parse_link_geometry(
-    xml_parser: &mut EventReader<&[u8]>,
-) -> Result<Polyhedron, ParseRobotError> {
+fn parse_link_geometry(xml_parser: &mut EventReader<&[u8]>) -> Result<Polyhedron, ParseRobotError> {
     let mut shape: Option<Polyhedron> = None;
     loop {
         let event = xml_parser.next();
@@ -155,17 +154,16 @@ fn parse_link_geometry(
                     let fname = attributes
                         .iter()
                         .find(|&a| a.name.local_name == "filename")
-                        .ok_or("expected file name attribute").unwrap()
+                        .ok_or("expected file name attribute")
+                        .unwrap()
                         .value
                         .to_owned();
                     // if fname.starts_with("package://") {
                     // }
                     let mut poly = Polyhedron::from(fname.to_owned());
-                    if let Some(scale) = attributes
-                        .iter()
-                        .find(|&a| a.name.local_name == "scale") {
-                            poly.scale_xyz(parse_3f(&scale.value).unwrap());
-                        }
+                    if let Some(scale) = attributes.iter().find(|&a| a.name.local_name == "scale") {
+                        poly.scale_xyz(parse_3f(&scale.value).unwrap());
+                    }
                     shape = Some(poly);
                 }
                 "box" | "cylinder" | "sphere" => match name.local_name.as_str() {
@@ -175,40 +173,46 @@ fn parse_link_geometry(
                             let size = parse_3f(&size_attr.value).unwrap();
                             shape = Polyhedron::from(TriMesh::create_box(size)).into();
                         } else {
-                            return Err("box requires size attribute".into())
+                            return Err("box requires size attribute".into());
                         }
                     }
                     "cylinder" => {
                         let l = attributes
                             .iter()
                             .find(|&a| a.name.local_name == "length")
-                            .ok_or("cylinder requires length").unwrap()
+                            .ok_or("cylinder requires length")
+                            .unwrap()
                             .value
-                            .parse::<f32>().unwrap();
+                            .parse::<f32>()
+                            .unwrap();
                         let r = attributes
                             .iter()
                             .find(|&a| a.name.local_name == "radius")
-                            .ok_or("cylinder requires radius").unwrap()
+                            .ok_or("cylinder requires radius")
+                            .unwrap()
                             .value
-                            .parse::<f32>().unwrap();
+                            .parse::<f32>()
+                            .unwrap();
                         shape = Polyhedron::from(TriMesh::create_cylinder(r, l, 30)).into();
                     }
                     "sphere" => {
                         let r = attributes
                             .iter()
                             .find(|&a| a.name.local_name == "radius")
-                            .ok_or("sphere requires radius").unwrap()
+                            .ok_or("sphere requires radius")
+                            .unwrap()
                             .value
-                            .parse::<f32>().unwrap();
-                        shape = Polyhedron::from(TriMesh::create_sphere(r,20, 20)).into();
+                            .parse::<f32>()
+                            .unwrap();
+                        shape = Polyhedron::from(TriMesh::create_sphere(r, 20, 20)).into();
                     }
                     _ => return Err("unknown element".into()),
                 },
-                _ => {return Err("unknown element".into())}
+                _ => return Err("unknown element".into()),
             },
             EndElement { name } => {
                 if name.local_name == "geometry" {
-                    return shape.ok_or("no shape provided?".into())
+                    return shape.ok_or("no shape provided?".into());
                 }
             }
             _ => {}
@@ -225,28 +229,33 @@ fn parse_link_visual(
     loop {
         let event = xml_parser.next();
         match event.clone().unwrap() {
-            StartElement { name, attributes, .. } => match name.local_name.as_str() {
+            StartElement {
+                name, attributes, ..
+            } => match name.local_name.as_str() {
                 "origin" => {
-                    let Origin{xyz, rpy} = parse_origin(event.unwrap()).unwrap();
+                    let Origin { xyz, rpy } = parse_origin(event.unwrap()).unwrap();
                     transform = Some(Transform::new(xyz, rpy.unwrap_or_default()));
-                    },
+                }
                 "geometry" => link.visual.geometry = parse_link_geometry(xml_parser).unwrap(),
-                "material" => if link.visual.material.is_none() {
-                    let mat_name = &attributes
-                        .iter()
-                        .find(|&a| a.name.local_name == "name")
-                        .ok_or("material requires name").unwrap()
-                        .value
-                        .to_owned();
-                    link.visual.material = Some(mat_name.to_owned());
-                    // if let Some(mat) = materials.iter().find(|m| m.name == *mat_name) {
-                    //     link.geometry.set_color(mat.color);
-                    // } else {
-                    if let Ok(mat) = parse_material(xml_parser, mat_name.to_owned()) {
-                        materials.push(mat);
+                "material" => {
+                    if link.visual.material.is_none() {
+                        let mat_name = &attributes
+                            .iter()
+                            .find(|&a| a.name.local_name == "name")
+                            .ok_or("material requires name")
+                            .unwrap()
+                            .value
+                            .to_owned();
+                        link.visual.material = Some(mat_name.to_owned());
+                        // if let Some(mat) = materials.iter().find(|m| m.name == *mat_name) {
+                        //     link.geometry.set_color(mat.color);
+                        // } else {
+                        if let Ok(mat) = parse_material(xml_parser, mat_name.to_owned()) {
+                            materials.push(mat);
+                        }
+                        // }
                     }
-                    // }
-                },
+                }
                 _ => {}
             },
             EndElement { name } => {
@@ -267,11 +276,13 @@ fn parse_link_collision(
     loop {
         let event = xml_parser.next();
         match event.clone().unwrap() {
-            StartElement { name, attributes, .. } => match name.local_name.as_str() {
+            StartElement {
+                name, attributes, ..
+            } => match name.local_name.as_str() {
                 "origin" => link.collision.transform = parse_origin(event.unwrap()).unwrap().into(),
                 "geometry" => {
                     link.collision.geometry = parse_link_geometry(xml_parser).unwrap();
-                },
+                }
                 _ => {}
             },
             EndElement { name } => {
@@ -289,33 +300,73 @@ fn parse_link_inertial(
 ) -> Result<Link, ParseRobotError> {
     let mut origin: Option<Origin> = None;
     let mut mass: Option<f32> = None;
-    let mut inertia: Option<[f32;6]> = None;
+    let mut inertia: Option<[f32; 6]> = None;
     loop {
         let event = xml_parser.next();
         match event.clone().unwrap() {
-            StartElement { name, attributes, .. } => match name.local_name.as_str() {
-                "origin" => {origin = parse_origin(event.unwrap()).ok()},
-                "mass" => { mass = attributes.get(0).unwrap().value.parse::<f32>().ok()}
-                "inertia" => { 
-                     inertia = Some([
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixx"){ a.value.parse::<f32>().unwrap()} else {0.0},
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "iyy"){ a.value.parse::<f32>().unwrap()} else {0.0},
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "izz"){ a.value.parse::<f32>().unwrap()} else {0.0},
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixy"){ a.value.parse::<f32>().unwrap()} else {0.0},
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixz"){ a.value.parse::<f32>().unwrap()} else {0.0},
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "iyz"){ a.value.parse::<f32>().unwrap()} else {0.0},
-                        ]);
-                },
+            StartElement {
+                name, attributes, ..
+            } => match name.local_name.as_str() {
+                "origin" => origin = parse_origin(event.unwrap()).ok(),
+                "mass" => mass = attributes.get(0).unwrap().value.parse::<f32>().ok(),
+                "inertia" => {
+                    inertia = Some([
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixx") {
+                            a.value.parse::<f32>().unwrap()
+                        } else {
+                            0.0
+                        },
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "iyy") {
+                            a.value.parse::<f32>().unwrap()
+                        } else {
+                            0.0
+                        },
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "izz") {
+                            a.value.parse::<f32>().unwrap()
+                        } else {
+                            0.0
+                        },
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixy") {
+                            a.value.parse::<f32>().unwrap()
+                        } else {
+                            0.0
+                        },
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixz") {
+                            a.value.parse::<f32>().unwrap()
+                        } else {
+                            0.0
+                        },
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "iyz") {
+                            a.value.parse::<f32>().unwrap()
+                        } else {
+                            0.0
+                        },
+                    ]);
+                }
                 _ => {}
             },
             EndElement { name } => {
                 if name.local_name == "inertial" {
                     if let Some(mass) = mass {
                         if let Some([ixx, iyy, izz, ixy, ixz, iyz]) = inertia {
-                            link.inertial = InertialBody { origin: origin.unwrap_or_default(), transform: origin.unwrap_or_default().into(), mass, ixx, iyy, izz, ixy, ixz, iyz };
+                            link.inertial = InertialBody {
+                                origin: origin.unwrap_or_default(),
+                                transform: origin.unwrap_or_default().into(),
+                                mass,
+                                ixx,
+                                iyy,
+                                izz,
+                                ixy,
+                                ixz,
+                                iyz,
+                            };
                             return Ok(link);
-                        } else {panic!("inertial body requires moments of inertia!")}  
-                    } else {panic!("inertial body requires mass!")}
+                        } else {
+                            panic!("inertial body requires moments of inertia!")
+                        }
+                    } else {
+                        panic!("inertial body requires mass!")
+                    }
                 }
             }
             _ => {}
@@ -333,24 +384,20 @@ fn parse_link(
     loop {
         let event = xml_parser.next();
         match event.clone().unwrap() {
-            StartElement {
-                name, ..
-            } => {
-                match name.local_name.as_str() {
-                    "visual" => {
-                        link = parse_link_visual(xml_parser, link, materials).unwrap();
-                    }
-                    "inertial" => {link = parse_link_inertial(xml_parser, link).unwrap()},
-                    "collision" => {link = parse_link_collision(xml_parser, link).unwrap()},
-                    _ => {}
+            StartElement { name, .. } => match name.local_name.as_str() {
+                "visual" => {
+                    link = parse_link_visual(xml_parser, link, materials).unwrap();
                 }
-            }
+                "inertial" => link = parse_link_inertial(xml_parser, link).unwrap(),
+                "collision" => link = parse_link_collision(xml_parser, link).unwrap(),
+                _ => {}
+            },
             EndElement { name } => {
                 if name.local_name == "link" {
                     return Ok(link);
                 }
             }
-            _ => {} 
+            _ => {}
         }
     }
 }
@@ -405,7 +452,9 @@ pub fn parse_joint(
                             "lower" => lower = attr.value.parse::<f32>().unwrap(),
                             "upper" => upper = attr.value.parse::<f32>().unwrap(),
                             "velocity" => velocity = attr.value.parse::<f32>().unwrap(),
-                            _ => {panic!("unkown attribute in limit")}
+                            _ => {
+                                panic!("unkown attribute in limit")
+                            }
                         }
                     }
                     limits = Some(JointLimits {
@@ -414,31 +463,32 @@ pub fn parse_joint(
                         lower,
                         upper,
                     });
-                },
+                }
                 "dynamics" => {
                     let (mut damping, mut friction) = (0.0, 0.0);
                     for attr in attributes {
                         match attr.name.local_name.as_str() {
                             "damping" => damping = attr.value.parse::<f32>().unwrap(),
                             "friction" => friction = attr.value.parse::<f32>().unwrap(),
-                            _ => {panic!("unknown attribute in dynamics")}
+                            _ => {
+                                panic!("unknown attribute in dynamics")
+                            }
                         }
                     }
-                    dynamics = Some(JointDynamics { damping, friction});
+                    dynamics = Some(JointDynamics { damping, friction });
                 }
                 _ => {
                     eprintln!("{}", name.local_name.as_str());
-                    return Err("possibly unsupported feature".into())
+                    return Err("possibly unsupported feature".into());
                 }
             },
             EndElement { name } => {
                 if name.local_name == "joint" {
                     break;
                 }
-            },
-            Whitespace(..) => {},
-            _ => {
             }
+            Whitespace(..) => {}
+            _ => {}
         }
     }
     let (parent, child);
@@ -446,12 +496,14 @@ pub fn parse_joint(
     parent = links
         .iter()
         .position(|l| l.link_name == p_name)
-        .ok_or(format!("no known link with name {}", p_name)).unwrap();
+        .ok_or(format!("no known link with name {}", p_name))
+        .unwrap();
     let c_name = child_name.ok_or("child element is required!").unwrap();
     child = links
         .iter()
         .position(|l| l.link_name == c_name)
-        .ok_or(format!("no known link with name {}", c_name)).unwrap();
+        .ok_or(format!("no known link with name {}", c_name))
+        .unwrap();
     let transform = if let Some(Origin { xyz, rpy }) = origin {
         Transform::new(xyz, rpy.unwrap_or_default())
     } else {
@@ -466,7 +518,7 @@ pub fn parse_joint(
         transform,
         axis,
         limits,
-        dynamics
+        dynamics,
     })
 }
 
@@ -475,26 +527,40 @@ struct Material {
     name: String,
     color: glm::Vec3,
 }
-fn parse_material(xml_parser: &mut EventReader<&[u8]>, material_name: String) -> Result<Material, ParseRobotError> {
+fn parse_material(
+    xml_parser: &mut EventReader<&[u8]>,
+    material_name: String,
+) -> Result<Material, ParseRobotError> {
     let color: glm::Vec3;
     loop {
         let event = xml_parser.next().unwrap();
         match event {
-            StartElement { name, attributes, .. } => {
-                match name.local_name.as_str() {
-                    "color" => {
-                        let attr = attributes.iter().find(|&a| a.name.local_name == "rgba").ok_or("color must have rgba value").unwrap();
-                        color = parse_4f(&attr.value).unwrap().xyz();
-                        return Ok(Material{name:material_name, color})
-                    },
-                    "texture" => {unimplemented!()}
-                    _ => {return Err("unknown element in material".into())}
+            StartElement {
+                name, attributes, ..
+            } => match name.local_name.as_str() {
+                "color" => {
+                    let attr = attributes
+                        .iter()
+                        .find(|&a| a.name.local_name == "rgba")
+                        .ok_or("color must have rgba value")
+                        .unwrap();
+                    color = parse_4f(&attr.value).unwrap().xyz();
+                    return Ok(Material {
+                        name: material_name,
+                        color,
+                    });
                 }
+                "texture" => {
+                    unimplemented!()
+                }
+                _ => return Err("unknown element in material".into()),
             },
-            EndElement { name } => if name.local_name == "material" {
-                return Err("could not parse material".into());
-            },
-            Whitespace(..) => {},
+            EndElement { name } => {
+                if name.local_name == "material" {
+                    return Err("could not parse material".into());
+                }
+            }
+            Whitespace(..) => {}
             _ => {
                 return Err("could not parse material".into());
             }
@@ -520,7 +586,9 @@ fn parse_robot(
                 attr_name = attr.value.to_owned();
 
                 match name.local_name.as_str() {
-                    "link" => links.push(parse_link(&mut xml_parser, attr_name, &mut materials).unwrap()),
+                    "link" => {
+                        links.push(parse_link(&mut xml_parser, attr_name, &mut materials).unwrap())
+                    }
                     "joint" => {
                         let joint_type: JointType;
                         if let Some(attr) = attributes.get(1) {
@@ -531,17 +599,23 @@ fn parse_robot(
                                 "continuous" => joint_type = JointType::Continuous,
                                 "prismatic" => joint_type = JointType::Prismatic,
                                 "floating" => joint_type = JointType::Floating,
-                                _ => {
-                                    return Err("unrecognized joint type".into())
-                                }
+                                _ => return Err("unrecognized joint type".into()),
                             }
                         } else {
-                            return Err("joint requires type attribute".into())
+                            return Err("joint requires type attribute".into());
                         }
-                        joints.push(parse_joint(&mut xml_parser, attr_name, joint_type, &links).unwrap())
+                        joints.push(
+                            parse_joint(&mut xml_parser, attr_name, joint_type, &links).unwrap(),
+                        )
                     }
-                    "material" => materials.push(parse_material(&mut xml_parser, attr_name).unwrap()),
-                    _ => return Err(format!("unexpected element name! \"{}\"", name.local_name).into()),
+                    "material" => {
+                        materials.push(parse_material(&mut xml_parser, attr_name).unwrap())
+                    }
+                    _ => {
+                        return Err(
+                            format!("unexpected element name! \"{}\"", name.local_name).into()
+                        )
+                    }
                 }
             }
             EndElement { name } => {
@@ -557,7 +631,12 @@ fn parse_robot(
     for mat in materials {
         for link in links.iter_mut() {
             // println!("{:?}", link.visual.material);
-            if link.visual.material.clone().is_some_and(|mn| mn == mat.name) {
+            if link
+                .visual
+                .material
+                .clone()
+                .is_some_and(|mn| mn == mat.name)
+            {
                 // println!("{:?}", mat);
                 link.visual.geometry.set_color(mat.color);
             }
@@ -599,17 +678,29 @@ impl FromStr for RobotDescriptor {
 
 impl RobotDescriptor {
     pub fn set_joint_position(&mut self, theta: &[f32], relative: bool) {
-        if theta.len() != self.joints.len() {panic!("expected {} got {}",  self.joints.len(), theta.len())}
+        if theta.len() != self.joints.len() {
+            panic!("expected {} got {}", self.joints.len(), theta.len())
+        }
         for (&th, j) in std::iter::zip(theta.into_iter(), &mut self.joints) {
             if !relative {
                 j.transform = j.origin.into();
             }
             match j.joint_type {
-                JointType::Revolute => { j.transform.rotate(j.axis.expect("revolute joint requires axis!"), th); /* check for limits */},
-                JointType::Prismatic => {j.transform.translate(th * j.axis.expect("prismatic joint requires axis"));},
-                JointType::Continuous => {j.transform.rotate(j.axis.expect("revolute joint requires axis!"), th);},
-                JointType::Floating => {/* do nothing */},
-                JointType::Fixed => {/* do nothing */},
+                JointType::Revolute => {
+                    j.transform
+                        .rotate(j.axis.expect("revolute joint requires axis!"), th);
+                    /* check for limits */
+                }
+                JointType::Prismatic => {
+                    j.transform
+                        .translate(th * j.axis.expect("prismatic joint requires axis"));
+                }
+                JointType::Continuous => {
+                    j.transform
+                        .rotate(j.axis.expect("revolute joint requires axis!"), th);
+                }
+                JointType::Floating => { /* do nothing */ }
+                JointType::Fixed => { /* do nothing */ }
             }
         }
     }
@@ -625,7 +716,9 @@ impl RobotDescriptor {
             .iter()
             .filter(|j| self.links[j.parent].link_name == cur_link.link_name)
             .map(|j| {
-                let tf = cur_link.inertial.transform * j.transform * self.links[j.child].inertial.transform;
+                let tf = cur_link.inertial.transform
+                    * j.transform
+                    * self.links[j.child].inertial.transform;
                 (j.child, tf)
             })
             .collect()
@@ -660,13 +753,22 @@ pub trait RobotGraphics {
     fn robot_create_mesh_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer>;
     fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline);
     fn robot_create_transform_buffers(&mut self, robot: &RobotDescriptor) -> Vec<wgpu::Buffer>;
-    fn robot_assign_transform_buffers(&mut self, robot: &RobotDescriptor, buffer: &Vec<wgpu::Buffer>);
+    fn robot_assign_transform_buffers(
+        &mut self,
+        robot: &RobotDescriptor,
+        buffer: &Vec<wgpu::Buffer>,
+    );
     // fn robot_create_bindings(&mut self, /* robot: &RobotDescriptor, */ light_buffer: &wgpu::Buffer, camera_buffer: &wgpu::Buffer, transform_buffer: &Vec<wgpu::Buffer>);
 }
 
 impl RobotGraphics for WGPUGraphics<'_> {
     fn robot_create_mesh_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer> {
-        robot.links.iter().map(|link| &link.visual.geometry).map(|mesh| self.create_mesh_buffer(mesh)).collect()
+        robot
+            .links
+            .iter()
+            .map(|link| &link.visual.geometry)
+            .map(|mesh| self.create_mesh_buffer(mesh))
+            .collect()
     }
     fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline) {
         let buffers = self.robot_create_mesh_buffers(robot);
@@ -675,7 +777,11 @@ impl RobotGraphics for WGPUGraphics<'_> {
     fn robot_create_transform_buffers(&mut self, robot: &RobotDescriptor) -> Vec<wgpu::Buffer> {
         self.create_transform_buffers(robot.links.iter().map(|l| l.inertial.transform))
     }
-    fn robot_assign_transform_buffers(&mut self, robot: &RobotDescriptor, buffers: &Vec<wgpu::Buffer>) {
+    fn robot_assign_transform_buffers(
+        &mut self,
+        robot: &RobotDescriptor,
+        buffers: &Vec<wgpu::Buffer>,
+    ) {
         // std::iter::zip(buffers, &robot.links).for_each(|(b,l)| self.assign_uniform(b, &[l.inertial.transform]))
         self.update_transforms(buffers, robot.links.iter().map(|l| l.inertial.transform))
     }

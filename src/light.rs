@@ -1,4 +1,4 @@
-use bytemuck::{Pod,Zeroable};
+use bytemuck::{Pod, Zeroable};
 
 #[derive(Debug)]
 pub struct Light {
@@ -11,7 +11,7 @@ impl Light {
         Self {
             ambient_intensity: intensity.unwrap_or(0.5),
             uniform: LightUniform::new(),
-            // buffer: 
+            // buffer:
         }
     }
 }
@@ -42,6 +42,11 @@ impl LightUniform {
     //     }
     // }
     pub fn new() -> Self {
-        Self { position: glm::vec3(0.0, 0.0, 0.0), _padding: 0, color: glm::vec3(1.,1.,1.), _padding2: 0 }
+        Self {
+            position: glm::vec3(0.0, 0.0, 0.0),
+            _padding: 0,
+            color: glm::vec3(1., 1., 1.),
+            _padding2: 0,
+        }
     }
 }

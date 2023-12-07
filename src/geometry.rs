@@ -1,14 +1,13 @@
 use crate::graphics::Vertex;
 use std::fs::File;
-use std::io::{BufReader, BufRead};
-// use crate::util::print_type_of;
+use std::io::{BufRead, BufReader};
 use itertools::Itertools;
-// use rayon::prelude::*;
+use rayon::prelude::*;
 use std::convert::{From, Into};
 use std::fmt;
 // use std::io::Read;
-use std::slice::Iter;
 use bytemuck::{Pod, Zeroable};
+use std::slice::Iter;
 // use core::error::{Error, Result};
 
 #[derive(Debug, Copy, Clone)]
@@ -18,13 +17,25 @@ pub struct Triangle {
 unsafe impl Zeroable for Triangle {}
 unsafe impl Pod for Triangle {}
 impl Triangle {
-    fn new(verts: [glm::Vec3;3], normal: glm::Vec3, color: glm::Vec3) -> Self {
+    fn new(verts: [glm::Vec3; 3], normal: glm::Vec3, color: glm::Vec3) -> Self {
         Self {
-            vertices : [
-                Vertex { position: verts[0], normal, color},
-                Vertex { position: verts[1], normal, color},
-                Vertex { position: verts[2], normal, color},
-            ]
+            vertices: [
+                Vertex {
+                    position: verts[0],
+                    normal,
+                    color,
+                },
+                Vertex {
+                    position: verts[1],
+                    normal,
+                    color,
+                },
+                Vertex {
+                    position: verts[2],
+                    normal,
+                    color,
+                },
+            ],
         }
     }
 }
@@ -50,31 +61,45 @@ unsafe impl Zeroable for Transform {}
 
 impl Default for Transform {
     fn default() -> Self {
-        Self { tmatrix: glm::Mat4x4::identity() }
+        Self {
+            tmatrix: glm::Mat4x4::identity(),
+        }
     }
 }
 impl std::ops::Mul<Vertex> for Transform {
     type Output = Vertex;
-    fn mul(self, rhs:Vertex) -> Self::Output {
-        Vertex { position: (self.tmatrix * glm::vec4(rhs.position.x, rhs.position.y, rhs.position.z, 1.0)).xyz(), normal: rhs.normal, color: rhs.color }
+    fn mul(self, rhs: Vertex) -> Self::Output {
+        Vertex {
+            position: (self.tmatrix
+                * glm::vec4(rhs.position.x, rhs.position.y, rhs.position.z, 1.0))
+            .xyz(),
+            normal: rhs.normal,
+            color: rhs.color,
+        }
     }
 }
 impl std::ops::Mul<Transform> for Transform {
     type Output = Transform;
     fn mul(self, rhs: Transform) -> Self::Output {
-        Transform { tmatrix: self.tmatrix * rhs.tmatrix }
+        Transform {
+            tmatrix: self.tmatrix * rhs.tmatrix,
+        }
     }
 }
 impl std::ops::Add<Transform> for Transform {
     type Output = Transform;
     fn add(self, rhs: Transform) -> Self::Output {
-        Transform { tmatrix: self.tmatrix + rhs.tmatrix }
+        Transform {
+            tmatrix: self.tmatrix + rhs.tmatrix,
+        }
     }
 }
 impl std::ops::Sub<Transform> for Transform {
     type Output = Transform;
     fn sub(self, rhs: Transform) -> Self::Output {
-        Transform { tmatrix: self.tmatrix - rhs.tmatrix }
+        Transform {
+            tmatrix: self.tmatrix - rhs.tmatrix,
+        }
     }
 }
 
@@ -94,8 +119,7 @@ impl Transform {
         self.tmatrix = glm::rotate(&self.tmatrix, angle, &axis);
     }
     pub fn translate(&mut self, xyz: glm::Vec3) {
-
-        let t =     glm::translate(&self.tmatrix, &xyz);
+        let t = glm::translate(&self.tmatrix, &xyz);
         self.tmatrix = t;
     }
 }
@@ -122,7 +146,6 @@ pub struct Polyhedron {
 }
 
 impl TriMesh {
-   
     pub fn add_triangle(&mut self, v: [glm::Vec3; 3]) {
         self.faces.push(Triangle {
             vertices: [v[0].into(), v[1].into(), v[2].into()],
@@ -137,7 +160,8 @@ impl TriMesh {
         });
     }
     pub fn calculate_normals(&mut self) {
-        for tri in self.faces.iter_mut() {
+        //parallelize normal calculation
+        self.faces.par_iter_mut().for_each(|tri| {
             let edge1 = tri.vertices[1].position - tri.vertices[0].position;
             let edge2 = tri.vertices[2].position - tri.vertices[1].position;
             let normal = glm::cross(&edge1, &edge2);
@@ -145,7 +169,7 @@ impl TriMesh {
             tri.vertices[0].normal = normal;
             tri.vertices[1].normal = normal;
             tri.vertices[2].normal = normal;
-        }
+        })
     }
 }
 
@@ -192,7 +216,7 @@ impl CylinderMesh for TriMesh {
         side1 = [r, 0.0, 0.0].into();
         side2 = [0.0, r, 0.0].into();
         side3 = [0.0, 0.0, h].into();
-        let bottom = side3*0.5 -  side3; // centre of base
+        let bottom = side3 * 0.5 - side3; // centre of base
         let top = bottom + side3; // centre of top
 
         use std::f32::consts::PI;
@@ -215,12 +239,12 @@ impl CylinderMesh for TriMesh {
     }
 }
 impl SphereMesh for TriMesh {
-    fn create_sphere(r: f32, n_slices: usize, n_stacks:usize) -> Self {
+    fn create_sphere(r: f32, n_slices: usize, n_stacks: usize) -> Self {
         let mut mesh = TriMesh::default();
-        let mut verts: Vec<glm::Vec3> = Vec::with_capacity(n_stacks*n_slices);
+        let mut verts: Vec<glm::Vec3> = Vec::with_capacity(n_stacks * n_slices);
 
         // add top vertex
-        let v0:glm::Vec3 = [0.0, r, 0.0].into();
+        let v0: glm::Vec3 = [0.0, r, 0.0].into();
         verts.push(v0);
 
         use std::f32::consts::PI;
@@ -237,18 +261,14 @@ impl SphereMesh for TriMesh {
         }
 
         // add bottom vertex
-        let v1:glm::Vec3 = [0.0, -r, 0.0].into();
+        let v1: glm::Vec3 = [0.0, -r, 0.0].into();
         verts.push(v1);
 
         // add top / bottom triangles
         for i in 0..n_slices {
             let i0 = i + 1;
             let i1 = (i + 1) % n_slices + 1;
-            mesh.add_triangle([
-                              v0,
-                              verts[i1],
-                              verts[i0]
-            ]);
+            mesh.add_triangle([v0, verts[i1], verts[i0]]);
             let i0 = i + n_slices * (n_stacks - 2) + 1;
             let i1 = (i + 1) % n_slices + n_slices * (n_stacks - 2) + 1;
             mesh.add_triangle([v1, verts[i0], verts[i1]]);
@@ -279,7 +299,7 @@ impl PlaneMesh for TriMesh {
             glm::vec3(SIZE, -SIZE, 0.0),
             glm::vec3(SIZE, SIZE, 0.0),
             glm::vec3(-SIZE, SIZE, 0.0),
-            ]);
+        ]);
         mesh
     }
 }
@@ -288,7 +308,7 @@ impl PlaneMesh for TriMesh {
 pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
     let mut data = bytes.iter();
 
-    let _header: Vec<u8> = data.by_ref().take(80).map(|val| { *val }).collect();
+    let _header: Vec<u8> = data.by_ref().take(80).map(|val| *val).collect();
     // let _header: String = String::from_utf8_lossy(&_header).trim_end_matches("\0").to_string();
 
     let triangle_count = {
@@ -297,7 +317,7 @@ pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
         for i in 0..4 {
             raw[i] = match data.next() {
                 Some(val) => *val,
-                None => panic!()
+                None => panic!(),
             }
         }
 
@@ -315,15 +335,10 @@ pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
         let _ = data.next();
         let _ = data.next();
 
-        let tri = Triangle::new (
-            [
-                vert_a,
-                vert_b,
-                vert_c,
-            ], 
+        let tri = Triangle::new(
+            [vert_a, vert_b, vert_c],
             normal,
-            glm::Vec3::default()
-            // normal
+            glm::Vec3::default(), // normal
         );
         // println!("{:#?}", tri);
         faces.push(tri)
@@ -333,11 +348,7 @@ pub fn parse_binary_stl(bytes: &[u8]) -> TriMesh {
 }
 
 fn read_f32_triplet<'a>(data: &mut Iter<'a, u8>) -> Result<[f32; 3], String> {
-    Ok([
-        read_f32(data)?,
-        read_f32(data)?,
-        read_f32(data)?
-    ])
+    Ok([read_f32(data)?, read_f32(data)?, read_f32(data)?])
 }
 
 fn read_f32<'a>(data: &mut Iter<'a, u8>) -> Result<f32, String> {
@@ -345,7 +356,7 @@ fn read_f32<'a>(data: &mut Iter<'a, u8>) -> Result<f32, String> {
     for item in &mut raw {
         *item = match data.next() {
             Some(val) => *val,
-            None => return Err("Invalid triangle count byte sequence".into())
+            None => return Err("Invalid triangle count byte sequence".into()),
         };
     }
 
@@ -446,8 +457,8 @@ fn parse_obj(fname: String) -> TriMesh {
                             "v" => state = State::Vertex,
                             "vn" => state = State::Normal,
                             "f" => state = State::Face,
-                            "mtllib" => {},
-                            "o" => {},
+                            "mtllib" => {}
+                            "o" => {}
                             _ => {
                                 if token.trim().starts_with("#") {
                                     continue;
@@ -471,8 +482,11 @@ fn parse_obj(fname: String) -> TriMesh {
                         state = State::Wait;
                     }
                     State::Face => {
-                        let mut face = Triangle { vertices: [Vertex::default(); 3] };
-                        let re = regex::Regex::new(r"v?((?:[0-9])*)\/\/(?:vn)?((?:[0-9])*)").unwrap();
+                        let mut face = Triangle {
+                            vertices: [Vertex::default(); 3],
+                        };
+                        let re =
+                            regex::Regex::new(r"v?((?:[0-9])*)\/\/(?:vn)?((?:[0-9])*)").unwrap();
 
                         for (k, token) in tokens.enumerate().take(3) {
                             if let Some(captures) = re.captures(token) {
@@ -492,14 +506,10 @@ fn parse_obj(fname: String) -> TriMesh {
     TriMesh { faces }
 }
 
-
-
 impl From<MeshType> for TriMesh {
     fn from(mesh_type: MeshType) -> Self {
         match mesh_type {
-            MeshType::STL(fname) => {
-                parse_stl(fname)
-            }
+            MeshType::STL(fname) => parse_stl(fname),
             MeshType::OBJ(fname) => parse_obj(fname),
             _ => panic!("type unsupported"),
         }
@@ -516,7 +526,6 @@ impl Default for Polyhedron {
     }
 }
 
-
 impl Polyhedron {
     pub fn verts(&self) -> &Vec<Vertex> {
         &self.verts
@@ -524,18 +533,18 @@ impl Polyhedron {
     pub fn indices(&self) -> &Vec<u32> {
         &self.indices
     }
-    // pub fn update_base(&mut self) {
-    //     self.verts.iter_mut().for_each(|v| *v = self.transform * (*v));
-    //     // self.transform = Transform::default(); // update to new frame
-    // }
     pub fn set_color(&mut self, color: glm::Vec3) {
-        self.verts.iter_mut().for_each(|v| {(*v).color = color});
+        //parallelize coloring verts 
+        self.verts.par_iter_mut().for_each(|v| (*v).color = color);
     }
     pub fn scale(&mut self, factor: f32) {
-        self.verts.iter_mut().for_each(|v| (*v).position *= factor);
+        //parallelize scaling verts
+        self.verts.par_iter_mut().for_each(|v| (*v).position *= factor);
     }
     pub fn scale_xyz(&mut self, factor: glm::Vec3) {
-        self.verts.iter_mut().for_each(|v| v.position = glm::diagonal3x3(&factor) * v.position);
+        self.verts
+            .par_iter_mut() // parallelize
+            .for_each(|v| v.position = glm::diagonal3x3(&factor) * v.position);
     }
 }
 
@@ -549,8 +558,8 @@ impl From<String> for Polyhedron {
     }
 }
 
-pub trait OptimizeMesh<T>  {
-    fn optimize(mesh:T) -> Self;
+pub trait OptimizeMesh<T> {
+    fn optimize(mesh: T) -> Self;
 }
 impl OptimizeMesh<TriMesh> for Polyhedron {
     // create efficient index buffer -- adds overhead
@@ -578,10 +587,7 @@ impl OptimizeMesh<TriMesh> for Polyhedron {
                 indices
             })
             .collect();
-        let poly = Self {
-            verts,
-            indices,
-        };
+        let poly = Self { verts, indices };
         poly
     }
 }
@@ -590,8 +596,7 @@ impl From<TriMesh> for Polyhedron {
     fn from(mut mesh: TriMesh) -> Self {
         mesh.calculate_normals();
         Self {
-            indices: (0..3*mesh.faces.len() as u32)
-                .collect(),
+            indices: (0..3 * mesh.faces.len() as u32).collect(),
             verts: bytemuck::cast_vec::<Triangle, Vertex>(mesh.faces),
         }
     }
