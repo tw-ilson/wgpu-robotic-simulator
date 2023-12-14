@@ -17,5 +17,5 @@ The crate provides several modules:
 To build the library with an up-to-date Rust toolchain:
 > cargo build
 
-To run:
-> cargo run --example=urdf_parse
+To run the XArm example:
+> cargo run --example=urdf_arm
