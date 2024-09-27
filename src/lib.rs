@@ -12,6 +12,3 @@ pub mod texture;
 pub mod util;
 pub mod wgpu_program;
 extern crate nalgebra_glm as glm;
-
-// #[cfg(not(target_arch = "wasm32"))]
-// pub mod opengl_program;

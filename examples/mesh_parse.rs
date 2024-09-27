@@ -1,11 +1,11 @@
 use std::f32::consts::PI;
 
-use physics_engine::geometry::{
+use wgpu_robotic_simulator::geometry::{
     BoxMesh, CylinderMesh, MeshType, OptimizeMesh, PlaneMesh, Polyhedron, SphereMesh, Transform,
     TriMesh,
 };
-use physics_engine::shader::CreatePipeline;
-use physics_engine::wgpu_program::{MeshBuffer, WGPUGraphics};
+use wgpu_robotic_simulator::shader::CreatePipeline;
+use wgpu_robotic_simulator::wgpu_program::{MeshBuffer, WGPUGraphics};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},

@@ -1,6 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 use glm::Mat4;
-use winit::event::{ElementState, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event::{ElementState, WindowEvent, KeyEvent};
+use winit::keyboard::{PhysicalKey, KeyCode};
 
 // changes from OPENGL coordinate system to DIRECTX coordinate system
 #[rustfmt::skip]
@@ -124,37 +125,37 @@ impl CameraController {
                 true
             }
             WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(keycode),
                         state,
-                        virtual_keycode: Some(keycode),
                         ..
                     },
                 ..
             } => {
                 let is_pressed = *state == ElementState::Pressed;
                 match keycode {
-                    VirtualKeyCode::W | VirtualKeyCode::Up => {
+                    KeyCode::KeyW | KeyCode::ArrowUp => {
                         self.input_state.forward = is_pressed;
                         true
                     }
-                    VirtualKeyCode::A | VirtualKeyCode::Left => {
+                    KeyCode::KeyA | KeyCode::ArrowLeft => {
                         self.input_state.left = is_pressed;
                         true
                     }
-                    VirtualKeyCode::S | VirtualKeyCode::Down => {
+                    KeyCode::KeyS | KeyCode::ArrowDown => {
                         self.input_state.backward = is_pressed;
                         true
                     }
-                    VirtualKeyCode::D | VirtualKeyCode::Right => {
+                    KeyCode::KeyD | KeyCode::ArrowRight => {
                         self.input_state.right = is_pressed;
                         true
                     }
-                    VirtualKeyCode::Z => {
+                    KeyCode::KeyZ => {
                         self.input_state.up = is_pressed;
                         true
                     }
-                    VirtualKeyCode::X => {
+                    KeyCode::KeyX => {
                         self.input_state.down = is_pressed;
                         true
                     }

@@ -18,13 +18,13 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-pub struct WGPUState {
+pub struct WGPUState<'a> {
     // Device Configuration state
     pub size: winit::dpi::PhysicalSize<u32>,
     pub instance: wgpu::Instance,
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
-    pub surface: wgpu::Surface,
+    pub surface: wgpu::Surface<'a>,
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub depth_texture: Texture,
@@ -40,7 +40,7 @@ pub struct WGPUState {
 
 fn retrieve_adapter_device(
     instance: &wgpu::Instance,
-    window: Window,
+    surface: &wgpu::Surface,
 ) -> (wgpu::Adapter, wgpu::Device, wgpu::Queue) {
     let device_fut = async {
         let adapter = instance
@@ -48,7 +48,7 @@ fn retrieve_adapter_device(
                 power_preference: wgpu::PowerPreference::default(),
                 force_fallback_adapter: false,
                 compatible_surface: Some(
-                    &instance.create_surface(wgpu::SurfaceTarget::from(window)).expect("unable to create surface from window"),
+                    surface
                 ),
             })
             .await
@@ -94,8 +94,8 @@ impl Vertex {
 }
 
 #[allow(dead_code)]
-pub type WGPUGraphics<'a> = GraphicsContext<WGPUState, Window, wgpu::Buffer>;
-impl WGPUGraphics<'_> {
+pub type WGPUGraphics<'a> = GraphicsContext<WGPUState<'a>, &'a Window, wgpu::Buffer>;
+impl<'a> WGPUGraphics<'a> {
     // convenience accessors for state
     pub fn size(&self) -> &winit::dpi::PhysicalSize<u32> {
         return &self.backend.size;
@@ -322,11 +322,8 @@ impl WGPUGraphics<'_> {
     }
 
     //constructor
-    pub fn new(width: u32, height: u32, event: &EventLoop<()>) -> Self {
+    pub fn new(width: u32, height: u32, window: &'a Window) -> Self {
         // let window = Window::new(event).expect("unable to create winit window");
-        let window = WindowBuilder::new()
-            .build(event)
-            .expect("unable to create winit window");
         if window
             .set_cursor_grab(winit::window::CursorGrabMode::Locked)
             .is_err()
@@ -353,16 +350,16 @@ impl WGPUGraphics<'_> {
         // }
 
         let size = PhysicalSize::new(width, height);
-        window.request_inner_size(size);
+        let _ = window.request_inner_size(size);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             flags: wgpu::InstanceFlags::default(),
             dx12_shader_compiler: Default::default(),
             gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
         });
-        let surface = instance.create_surface(wgpu::SurfaceTarget::from(Box::new(window))).expect("unable to create surface");
+        let surface = instance.create_surface(wgpu::SurfaceTarget::from(window)).expect("unable to create surface");
 
-        let (adapter, device, queue) = retrieve_adapter_device(&instance, window);
+        let (adapter, device, queue) = retrieve_adapter_device(&instance, &surface);
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities

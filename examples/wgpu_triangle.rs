@@ -1,15 +1,15 @@
-use itertools::Itertools;
-use physics_engine::shader::CreatePipeline;
+use wgpu_robotic_simulator::shader::CreatePipeline;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 // use std::log;
-use physics_engine::graphics::{GraphicsProgram, Vertex};
-use physics_engine::wgpu_program::WGPUGraphics;
+use wgpu_robotic_simulator::graphics::Vertex;
+use wgpu_robotic_simulator::wgpu_program::WGPUGraphics;
 // use futures::lock::Mutex;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
+    keyboard::{PhysicalKey, KeyCode}
 };
 
 const SHADER_STRING: &str = "
@@ -66,8 +66,41 @@ fn vertex_specification() -> (Vec<Vertex>, Vec<u32>) {
     )
 }
 
-pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
-    // Create buffer
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
+fn enter_program() {
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "wasm32")] {
+            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+            console_log::init_with_level(log::Level::Warn).expect("Could't initialize logger");
+        } else {
+            env_logger::init();
+        }
+    }
+
+    let event_loop = winit::event_loop::EventLoop::new().unwrap();
+    let window = winit::window::Window::new(&event_loop).unwrap();
+    let mut program = WGPUGraphics::new(800, 600, &window);
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Winit prevents sizing with CSS, so we have to set
+        // the size manually when on web.
+        use winit::dpi::PhysicalSize;
+        program.window.set_inner_size(PhysicalSize::new(800, 600));
+
+        use winit::platform::web::WindowExtWebSys;
+        web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| {
+                let dst = doc.get_element_by_id("wasm-example")?;
+                let canvas = web_sys::Element::from(program.window.canvas());
+                dst.append_child(&canvas).ok()?;
+                Some(())
+            })
+            .expect("Couldn't append canvas to document body.");
+    }
+    
     let pipeline = program
         .create_render_pipeline(SHADER_STRING)
         .expect("failed to get render pipeline!");
@@ -76,12 +109,9 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(&vertices);
     let index_buffer: wgpu::Buffer = program.create_index_buffer(&indices);
 
-    program.preloop(&mut |p| {
-        println!("Called one time before the loop!");
-    });
-    event_loop.run(move |event, _, control_flow| {
+    event_loop.run(move |event, window_target| {
         match event {
-            Event::RedrawRequested(window_id) if window_id == program.window.id() => {
+            Event::WindowEvent{event: WindowEvent::RedrawRequested, window_id} if window_id == program.window.id() => {
                 // program.update(&mut |p| { p.default_state() });
                 program.render(&mut |p| {
                     // -> Result<(), wgpu::SurfaceError>
@@ -128,7 +158,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                     output.present();
                 });
             }
-            Event::MainEventsCleared => program.window.request_redraw(),
+            // Event::MainEventsCleared => program.window.request_redraw(),
 
             Event::WindowEvent {
                 ref event,
@@ -136,57 +166,18 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
             } if window_id == program.window.id() => match event {
                 WindowEvent::CloseRequested
                 | WindowEvent::KeyboardInput {
-                    input:
-                        KeyboardInput {
+                    event:KeyEvent {
                             state: ElementState::Pressed,
-                            virtual_keycode: Some(VirtualKeyCode::Escape),
+                            physical_key: PhysicalKey::Code(KeyCode::Escape),
                             ..
                         },
                     ..
-                } => *control_flow = ControlFlow::Exit,
+                } => window_target.exit(),
                 _ => {}
             },
             _ => {}
         }
     });
-}
-
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
-fn enter_program() {
-    cfg_if::cfg_if! {
-        if #[cfg(target_arch = "wasm32")] {
-            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Warn).expect("Could't initialize logger");
-        } else {
-            env_logger::init();
-        }
-    }
-
-    let event_loop = winit::event_loop::EventLoop::new();
-    let mut program = WGPUGraphics::new(800, 600, &event_loop);
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        // Winit prevents sizing with CSS, so we have to set
-        // the size manually when on web.
-        use winit::dpi::PhysicalSize;
-        program.window.set_inner_size(PhysicalSize::new(800, 600));
-
-        use winit::platform::web::WindowExtWebSys;
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| {
-                let dst = doc.get_element_by_id("wasm-example")?;
-                let canvas = web_sys::Element::from(program.window.canvas());
-                dst.append_child(&canvas).ok()?;
-                Some(())
-            })
-            .expect("Couldn't append canvas to document body.");
-    }
-
-    // Create pipeline from vertex, fragment shaders
-    // program.get_backend_info();
-    run_loop(program, event_loop);
 }
 
 // #[cfg_attr(target_arch = "wasm32", wasm_bindgen(main))]

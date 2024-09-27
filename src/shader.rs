@@ -3,11 +3,7 @@ use crate::graphics::Vertex;
 use crate::texture;
 use crate::wgpu_program::WGPUGraphics;
 use anyhow::*;
-use wgpu::core::binding_model;
-use wgpu::hal::vulkan::ShaderModule;
-use std::fs;
-use std::path;
-use std::str::FromStr;
+// use wgpu::hal::vulkan::ShaderModule;
 use itertools::Itertools;
 
 pub trait CompileShaders {
@@ -34,7 +30,7 @@ impl CompileShaders for WGPUGraphics<'_> {
         source: &str,
         stage: wgpu::naga::ShaderStage,
     ) -> wgpu::ShaderModule {
-        let label = format!("{:?}", stage);
+        let label = format!("stage: {:?}", stage);
         let desc = wgpu::ShaderModuleDescriptor {
                 label: Some(&label),
                 source: wgpu::ShaderSource::Glsl {
@@ -75,6 +71,8 @@ impl CreatePipeline for WGPUGraphics<'_> {
                     layout: Some(&pipeline_layout),
                     module: &shader_module,
                     entry_point: "main",
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None
                 });
         Ok(pipeline)
     }
@@ -114,6 +112,7 @@ impl CreatePipeline for WGPUGraphics<'_> {
                     module: &shader_module,
                     entry_point: "vs_main",
                     buffers: &[Vertex::desc()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default()
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader_module,
@@ -126,6 +125,7 @@ impl CreatePipeline for WGPUGraphics<'_> {
                         }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default()
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
@@ -154,6 +154,7 @@ impl CreatePipeline for WGPUGraphics<'_> {
                     alpha_to_coverage_enabled: false,
                 },
                 multiview: None,
+                cache: None
             });
         Ok(pipeline)
     }
