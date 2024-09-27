@@ -567,6 +567,26 @@ fn parse_material(
         }
     }
 }
+fn parse_transmission(
+    mut xml_parser: EventReader<&[u8]>,
+    name: Option<String>
+    ) -> Result<(), ParseRobotError> {
+    let joints: Vec<String> = Vec::new();
+    loop {
+        let event = xml_parser.next();
+        match event.unwrap() {
+            StartElement { name, attributes, .. } =>
+                match name.local_name.as_str() {
+                    "type" => {},
+                    "joint" => {},
+                    "actuator" => {},
+                    _=> {}
+                },
+            EndElement { name } => if name.local_name.as_str() == "transmission" { return Ok(()) }
+            _ => {}
+        }
+    }
+}
 fn parse_robot(
     mut xml_parser: EventReader<&[u8]>,
     robot_name: Option<String>,
@@ -574,22 +594,30 @@ fn parse_robot(
     let mut links = Vec::new();
     let mut joints = Vec::new();
     let mut materials = Vec::<Material>::new();
-    let mut attr_name: String;
+    // let mut attr_name: String = "".into();
     loop {
         let event = xml_parser.next();
         match event.unwrap() {
             StartElement {
                 name, attributes, ..
             } => {
-                let attr = attributes.get(0).ok_or("link requires name").unwrap();
-                assert!(attr.name.local_name == "name");
-                attr_name = attr.value.to_owned();
-
                 match name.local_name.as_str() {
                     "link" => {
-                        links.push(parse_link(&mut xml_parser, attr_name, &mut materials).unwrap())
+                        let attr = attributes
+                            .iter()
+                            .find(|a| a.name.local_name == "name")
+                            .ok_or("link requires name")
+                            .unwrap();
+                        // attr_name = attr.value.to_owned();
+                        links.push(parse_link(&mut xml_parser, attr.value.to_owned(), &mut materials).unwrap())
                     }
                     "joint" => {
+                        let attr = attributes
+                            .iter()
+                            .find(|a| a.name.local_name == "name")
+                            .ok_or("joint requires name")
+                            .unwrap();
+                        // attr_name = attr.value.to_owned();
                         let joint_type: JointType;
                         if let Some(attr) = attributes.get(1) {
                             assert!(attr.name.local_name == "type");
@@ -605,11 +633,18 @@ fn parse_robot(
                             return Err("joint requires type attribute".into());
                         }
                         joints.push(
-                            parse_joint(&mut xml_parser, attr_name, joint_type, &links).unwrap(),
+                            parse_joint(&mut xml_parser, attr.value.to_owned(), joint_type, &links).unwrap(),
                         )
                     }
+                    "transmission" => {panic!("unsupported feature: transmission")},
+                    "sensor" => {panic!("unsupported feature: sensor")},
                     "material" => {
-                        materials.push(parse_material(&mut xml_parser, attr_name).unwrap())
+                        let attr = attributes
+                            .iter()
+                            .find(|a| a.name.local_name == "name")
+                            .ok_or("material requires name")
+                            .unwrap();
+                        materials.push(parse_material(&mut xml_parser, attr.value.to_owned()).unwrap())
                     }
                     _ => {
                         return Err(
@@ -751,7 +786,8 @@ impl RobotDescriptor {
 
 pub trait RobotGraphics {
     fn robot_create_mesh_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer>;
-    fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline);
+    fn robot_assign_mesh_buffers(&mut self, robot: &RobotDescriptor, buffers: &Vec<MeshBuffer>);
+    fn draw_robot(&mut self, robot: &RobotDescriptor, buffers: &Vec<MeshBuffer>, pipeline: &wgpu::RenderPipeline);
     fn robot_create_transform_buffers(&mut self, robot: &RobotDescriptor) -> Vec<wgpu::Buffer>;
     fn robot_assign_transform_buffers(
         &mut self,
@@ -763,15 +799,13 @@ pub trait RobotGraphics {
 
 impl RobotGraphics for WGPUGraphics<'_> {
     fn robot_create_mesh_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer> {
-        robot
-            .links
-            .iter()
-            .map(|link| &link.visual.geometry)
-            .map(|mesh| self.create_mesh_buffer(mesh))
-            .collect()
+        self.create_mesh_buffers(robot.links.iter().map(|l| &l.visual.geometry))
     }
-    fn draw_robot(&mut self, robot: &RobotDescriptor, pipeline: &wgpu::RenderPipeline) {
-        let buffers = self.robot_create_mesh_buffers(robot);
+    fn robot_assign_mesh_buffers(&mut self, robot: &RobotDescriptor, buffers: &Vec<MeshBuffer>) {
+        // Warning: order matters!
+        std::iter::zip(buffers, &robot.links).map(|(buf, link)| self.assign_mesh_buffer(&link.visual.geometry, buf)).collect()
+    }
+    fn draw_robot(&mut self, robot: &RobotDescriptor, buffers: &Vec<MeshBuffer>, pipeline: &wgpu::RenderPipeline) {
         self.draw_mesh_list(pipeline, &buffers);
     }
     fn robot_create_transform_buffers(&mut self, robot: &RobotDescriptor) -> Vec<wgpu::Buffer> {

@@ -1,10 +1,10 @@
 use crate::graphics::Vertex;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::convert::{From, Into};
 use std::fmt;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 // use std::io::Read;
 use bytemuck::{Pod, Zeroable};
 use std::slice::Iter;
@@ -434,15 +434,15 @@ fn parse_obj(fname: String) -> TriMesh {
             std::process::exit(-1);
         }
     };
-    enum State {
-        Wait,
-        Vertex,
-        Normal,
-        Face,
-    }
+    // enum State {
+    //     Wait,
+    //     Vertex,
+    //     Normal,
+    //     Face,
+    // }
 
     let reader = BufReader::new(file);
-    let mut state = State::Wait;
+    // let mut state = State::Wait;
     let mut vertices: Vec<glm::Vec3> = Vec::new();
     let mut normals: Vec<glm::Vec3> = Vec::new();
     let mut faces: Vec<Triangle> = Vec::new();
@@ -451,37 +451,20 @@ fn parse_obj(fname: String) -> TriMesh {
         if let Ok(line) = line {
             let mut tokens = line.split_whitespace();
             if let Some(token) = tokens.next() {
-                match state {
-                    State::Wait => {
-                        match token {
-                            "v" => state = State::Vertex,
-                            "vn" => state = State::Normal,
-                            "f" => state = State::Face,
-                            "mtllib" => {}
-                            "o" => {}
-                            _ => {
-                                if token.trim().starts_with("#") {
-                                    continue;
-                                }
-                                eprintln!("Unexpected token -- possibly file contains unsupported features");
-                            }
-                        }
-                    }
-                    State::Vertex => {
+                match token {
+                    "v" => {
                         let x = tokens.next().unwrap().parse::<f32>().unwrap();
                         let y = tokens.next().unwrap().parse::<f32>().unwrap();
                         let z = tokens.next().unwrap().parse::<f32>().unwrap();
                         vertices.push(glm::vec3(x, y, z));
-                        state = State::Wait;
                     }
-                    State::Normal => {
+                    "vn" => {
                         let x = tokens.next().unwrap().parse::<f32>().unwrap();
                         let y = tokens.next().unwrap().parse::<f32>().unwrap();
                         let z = tokens.next().unwrap().parse::<f32>().unwrap();
                         normals.push(glm::vec3(x, y, z));
-                        state = State::Wait;
                     }
-                    State::Face => {
+                    "f" => {
                         let mut face = Triangle {
                             vertices: [Vertex::default(); 3],
                         };
@@ -497,7 +480,18 @@ fn parse_obj(fname: String) -> TriMesh {
                             }
                         }
                         faces.push(face);
-                        state = State::Wait;
+                    }
+                    "vt" => continue,
+                    "mtllib" => continue,
+                    "usemtl" => continue,
+                    "s" => continue,
+                    "o" => continue,
+                    _ => {
+                        if token.trim().starts_with("#") {
+                            continue;
+                        } else {
+                            eprintln!("Unexpected token {} -- possibly file contains unsupported features", token);
+                        }
                     }
                 }
             }
@@ -534,12 +528,14 @@ impl Polyhedron {
         &self.indices
     }
     pub fn set_color(&mut self, color: glm::Vec3) {
-        //parallelize coloring verts 
+        //parallelize coloring verts
         self.verts.par_iter_mut().for_each(|v| (*v).color = color);
     }
     pub fn scale(&mut self, factor: f32) {
         //parallelize scaling verts
-        self.verts.par_iter_mut().for_each(|v| (*v).position *= factor);
+        self.verts
+            .par_iter_mut()
+            .for_each(|v| (*v).position *= factor);
     }
     pub fn scale_xyz(&mut self, factor: glm::Vec3) {
         self.verts

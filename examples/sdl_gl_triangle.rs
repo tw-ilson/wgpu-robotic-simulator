@@ -1,6 +1,6 @@
+use nalgebra_glm as glm;
 use physics_engine::graphics::GraphicsProgram;
 use physics_engine::opengl_program::GLGraphics;
-use nalgebra_glm as glm;
 
 unsafe fn vertex_specification(program: &mut GLGraphics) {
     use std::ffi::c_void;

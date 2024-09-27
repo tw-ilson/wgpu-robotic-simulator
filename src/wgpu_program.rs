@@ -40,7 +40,7 @@ pub struct WGPUState {
 
 fn retrieve_adapter_device(
     instance: &wgpu::Instance,
-    window: &Window,
+    window: Window,
 ) -> (wgpu::Adapter, wgpu::Device, wgpu::Queue) {
     let device_fut = async {
         let adapter = instance
@@ -48,7 +48,7 @@ fn retrieve_adapter_device(
                 power_preference: wgpu::PowerPreference::default(),
                 force_fallback_adapter: false,
                 compatible_surface: Some(
-                    &unsafe { instance.create_surface(&window) }.expect("unable to create surface"),
+                    &instance.create_surface(wgpu::SurfaceTarget::from(window)).expect("unable to create surface from window"),
                 ),
             })
             .await
@@ -57,15 +57,16 @@ fn retrieve_adapter_device(
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::TEXTURE_BINDING_ARRAY,
+                    required_features: wgpu::Features::TEXTURE_BINDING_ARRAY,
                     // Need to do the spatial transforms on
                     // shader!
                     // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                    limits: if cfg!(target_arch = "wasm32") {
+                    required_limits: if cfg!(target_arch = "wasm32") {
                         wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
                     } else {
                         wgpu::Limits::default()
                     },
+                    memory_hints: wgpu::MemoryHints::default()
                 },
                 None,
             )
@@ -194,12 +195,12 @@ impl WGPUGraphics<'_> {
             wgpu::BufferUsages::INDEX,
         )
     }
-    pub fn assign_uniform<T: Zeroable + Pod>(&self, buffer: &wgpu::Buffer, data: &[T]) {
+    pub fn assign_buffer<T: Zeroable + Pod>(&self, buffer: &wgpu::Buffer, data: &[T]) {
         self.backend
             .queue
             .write_buffer(buffer, 0, bytemuck::cast_slice(data));
     }
-    //this is a hack to get the transform on Metal and Vulkan
+    
     pub fn assign_texture<T: Zeroable + Pod>(&self, texture: Texture, data: &[T]) {
         self.backend.queue.write_texture(
             wgpu::ImageCopyTexture {
@@ -237,7 +238,7 @@ impl WGPUGraphics<'_> {
         self.backend
             .camera
             .update_view_proj(&mut self.backend.camera_uniform);
-        self.assign_uniform(camera_buffer, &[self.backend.camera_uniform]);
+        self.assign_buffer(camera_buffer, &[self.backend.camera_uniform]);
     }
     pub fn process_keyboard(&mut self, event: &WindowEvent) -> bool {
         self.backend.camera_controller.process_keyboard(event)
@@ -265,7 +266,7 @@ impl WGPUGraphics<'_> {
             .light
             .uniform
             .set(self.backend.camera.get_eye_posn());
-        self.assign_uniform(light_buffer, &[self.backend.light.uniform]);
+        self.assign_buffer(light_buffer, &[self.backend.light.uniform]);
     }
 
     // Transforms
@@ -274,7 +275,7 @@ impl WGPUGraphics<'_> {
         T: IntoIterator,
         T::Item: Borrow<Transform>,
     {
-        std::iter::zip(t_buffers, t_data).for_each(|(b, t)| self.assign_uniform(b, &[*t.borrow()]))
+        std::iter::zip(t_buffers, t_data).for_each(|(b, t)| self.assign_buffer(b, &[*t.borrow()]))
     }
 
     pub fn create_transform_buffers<T>(&mut self, t_list: T) -> Vec<wgpu::Buffer>
@@ -301,6 +302,23 @@ impl WGPUGraphics<'_> {
             vertex_buffer: self.create_vertex_buffer(&poly.verts),
             index_buffer: self.create_index_buffer(&poly.indices),
         }
+    }
+    pub fn create_mesh_buffers<T>(&mut self, mesh_list: T) -> Vec<MeshBuffer>
+        where 
+            T: IntoIterator,
+            T::Item: Borrow<Polyhedron>,
+        {
+            mesh_list
+                .into_iter()
+                .map(|poly|
+                     self.create_mesh_buffer(poly.borrow())
+                     )
+                .collect()
+        }
+
+    pub fn assign_mesh_buffer(&mut self, poly: &Polyhedron, buffer: &MeshBuffer) {
+        self.assign_buffer(&buffer.index_buffer, poly.indices());
+        self.assign_buffer(&buffer.vertex_buffer, poly.verts());
     }
 
     //constructor
@@ -335,17 +353,16 @@ impl WGPUGraphics<'_> {
         // }
 
         let size = PhysicalSize::new(width, height);
-        window.set_inner_size(size);
+        window.request_inner_size(size);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             flags: wgpu::InstanceFlags::default(),
             dx12_shader_compiler: Default::default(),
             gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
         });
-        let surface =
-            unsafe { instance.create_surface(&window) }.expect("unable to create surface");
+        let surface = instance.create_surface(wgpu::SurfaceTarget::from(Box::new(window))).expect("unable to create surface");
 
-        let (adapter, device, queue) = retrieve_adapter_device(&instance, &window);
+        let (adapter, device, queue) = retrieve_adapter_device(&instance, window);
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities
@@ -363,6 +380,7 @@ impl WGPUGraphics<'_> {
             present_mode: swapchain_capabilities.present_modes[0],
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
 
         let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
@@ -437,12 +455,7 @@ impl WGPUGraphics<'_> {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(self.bg_color.into()),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -537,6 +550,11 @@ impl GraphicsProgram for WGPUGraphics<'_> {
         self.backend
             .surface
             .configure(&self.backend.device, self.config());
+    }
+}
+impl Into<wgpu::Color> for Color {
+    fn into(self) -> wgpu::Color {
+        wgpu::Color {r:self.r, g:self.g, b:self.b, a:self.a}
     }
 }
 

@@ -6,7 +6,7 @@ pub mod geometry;
 pub mod graphics;
 pub mod light;
 pub mod urdf;
-// pub mod physics;
+pub mod physics;
 pub mod shader;
 pub mod texture;
 pub mod util;

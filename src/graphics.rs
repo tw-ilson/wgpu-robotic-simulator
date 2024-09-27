@@ -17,6 +17,11 @@ impl From<glm::Vec3> for Vertex {
         }
     }
 }
+impl From<[f32;3]> for Vertex {
+    fn from(value: [f32;3]) -> Self {
+        Self::from(glm::Vec3::from(value))
+    }
+}
 
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
@@ -24,10 +29,10 @@ unsafe impl bytemuck::Zeroable for Vertex {}
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+    pub r: f64,
+    pub g: f64,
+    pub b: f64,
+    pub a: f64,
 }
 
 #[repr(C)]
@@ -63,11 +68,12 @@ where
     pub fn quit(&mut self) {
         self.flags.quit_loop = true;
     }
-    pub fn set_clear_color(&mut self, (r, g, b, a): (f32, f32, f32, f32)) {
+    pub fn set_clear_color(&mut self, (r, g, b, a): (f64, f64, f64, f64)) {
         self.bg_color = Color { r, g, b, a };
     }
     // why am I doing this?
     // closures capture calling scope
+    // There is no point except this is how it is defined
     pub fn preloop<F>(&mut self, f: &mut F)
     where
         F: FnMut(&mut GraphicsContext<B, W, R>),

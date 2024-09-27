@@ -6,6 +6,7 @@ use wasm_bindgen::prelude::*;
 // use std::log;
 use physics_engine::graphics::{GraphicsProgram, Vertex};
 use physics_engine::wgpu_program::WGPUGraphics;
+use physics_engine::texture::Texture;
 // use futures::lock::Mutex;
 use winit::{
     event::*,
@@ -42,29 +43,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 ";
 
-// put them on the heap
-fn vertex_specification() -> (Vec<Vertex>, Vec<u32>) {
-    (
-        vec![
-            Vertex {
-                position: [0.0, 0.5, 0.0].into(),
-                color: [1.0, 0.0, 0.0].into(),
-                normal: [0.0, 0.0, 0.0].into(),
-            },
-            Vertex {
-                position: [-0.5, -0.5, 0.0].into(),
-                color: [0.0, 1.0, 0.0].into(),
-                normal: [0.0, 0.0, 0.0].into(),
-            },
-            Vertex {
-                position: [0.5, -0.5, 0.0].into(),
-                color: [0.0, 0.0, 1.0].into(),
-                normal: [0.0, 0.0, 0.0].into(),
-            },
-        ],
-        vec![0, 1, 2],
-    )
-}
 
 pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     // Create buffer
@@ -72,9 +50,24 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
         .create_render_pipeline(SHADER_STRING)
         .expect("failed to get render pipeline!");
 
-    let (vertices, indices) = vertex_specification();
+    let (vertices, indices): (Vec<Vertex>, Vec<u32>) = 
+    (
+        vec![
+            [-1., 1., 0.].into(),
+            [1., 1., 0.].into(),
+            [-1., -1., 0.].into(),
+            [1., -1., 0.].into(),
+        ],
+        vec![
+            2,1,0,
+            1,2,3
+        ],
+    );
     let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(&vertices);
     let index_buffer: wgpu::Buffer = program.create_index_buffer(&indices);
+
+    let diffuse_bytes = include_bytes!("assets/image/flower.jpg");
+    let image_texture = Texture::from_bytes(program.device(), program.queue(), diffuse_bytes, "image");
 
     program.preloop(&mut |p| {
         println!("Called one time before the loop!");
@@ -116,6 +109,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
                                 occlusion_query_set: None,
                                 timestamp_writes: None,
                             });
+                        p.assign_texture(image_texture_buffer, )
                         render_pass.set_pipeline(&pipeline);
                         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                         render_pass

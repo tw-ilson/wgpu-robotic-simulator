@@ -1,17 +1,13 @@
-use std::f32::consts::PI;
-
-use physics_engine::urdf::*;
-use physics_engine::geometry::{Polyhedron, TriMesh, BoxMesh, CylinderMesh};
-use physics_engine::wgpu_program::{WGPUGraphics, MeshBuffer};
 use physics_engine::graphics::GraphicsProgram;
-use physics_engine::shader::CompilePipeline;
-use physics_engine::bindings::*;
+use physics_engine::shader::CreatePipeline;
+use physics_engine::urdf::*;
+use physics_engine::wgpu_program::WGPUGraphics;
+use std::f32::consts::PI;
 use std::str::FromStr;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
 };
-
 
 pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     let shader_string = include_str!("../shaders/shader.wgsl");
@@ -19,17 +15,21 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
     program.get_backend_info();
 
     // NOT WORKING !!
-    let mut robot = RobotDescriptor::from_str(include_str!("../assets/LittleDog.urdf")).expect("unable to read urdf");
+    let mut robot = RobotDescriptor::from_str(include_str!("../assets/LittleDog.urdf"))
+        .expect("unable to read urdf");
 
     //Initialize uniform buffers
     let camera_buffer = program.create_camera_buffer();
     let light_buffer = program.create_light_buffer();
     let transform_buffers = program.robot_create_transform_buffers(&robot);
+    let mesh_buffers = program.robot_create_mesh_buffers(&robot);
     //
     program.create_bindings(&light_buffer, &camera_buffer, &transform_buffers);
-    
+
     // Create pipeline from vertex, fragment shaders
-    let pipeline = program.create(shader_string);
+    let pipeline = program
+        .create_render_pipeline(shader_string)
+        .expect("unable to create render pipeline");
 
     let mut increment = 0.0;
     program.preloop(&mut |_| {
@@ -81,7 +81,7 @@ pub fn run_loop(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 
                 // RENDER
                 program.render(&mut |p| {
-                    p.draw_robot(&robot, &pipeline);
+                    p.draw_robot(&robot, &mesh_buffers, &pipeline);
                 });
             }
             Event::MainEventsCleared => program.window.request_redraw(),
