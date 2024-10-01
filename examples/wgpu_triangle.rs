@@ -1,6 +1,6 @@
-use wgpu_robotic_simulator::shader::CreatePipeline;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+use wgpu_robotic_simulator::shader::CreatePipeline;
 
 // use std::log;
 use wgpu_robotic_simulator::graphics::Vertex;
@@ -8,8 +8,7 @@ use wgpu_robotic_simulator::wgpu_program::WGPUGraphics;
 // use futures::lock::Mutex;
 use winit::{
     event::*,
-    event_loop::{ControlFlow, EventLoop},
-    keyboard::{PhysicalKey, KeyCode}
+    keyboard::{KeyCode, PhysicalKey},
 };
 
 const SHADER_STRING: &str = "
@@ -66,9 +65,8 @@ fn vertex_specification() -> (Vec<Vertex>, Vec<u32>) {
     )
 }
 
-
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
-fn enter_program() {
+fn run() -> anyhow::Result<()> {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -100,7 +98,7 @@ fn enter_program() {
             })
             .expect("Couldn't append canvas to document body.");
     }
-    
+
     let pipeline = program
         .create_render_pipeline(SHADER_STRING)
         .expect("failed to get render pipeline!");
@@ -111,7 +109,10 @@ fn enter_program() {
 
     event_loop.run(move |event, window_target| {
         match event {
-            Event::WindowEvent{event: WindowEvent::RedrawRequested, window_id} if window_id == program.window.id() => {
+            Event::WindowEvent {
+                event: WindowEvent::RedrawRequested,
+                window_id,
+            } if window_id == program.window.id() => {
                 // program.update(&mut |p| { p.default_state() });
                 program.render(&mut |p| {
                     // -> Result<(), wgpu::SurfaceError>
@@ -159,14 +160,14 @@ fn enter_program() {
                 });
             }
             // Event::MainEventsCleared => program.window.request_redraw(),
-
             Event::WindowEvent {
                 ref event,
                 window_id,
             } if window_id == program.window.id() => match event {
                 WindowEvent::CloseRequested
                 | WindowEvent::KeyboardInput {
-                    event:KeyEvent {
+                    event:
+                        KeyEvent {
                             state: ElementState::Pressed,
                             physical_key: PhysicalKey::Code(KeyCode::Escape),
                             ..
@@ -177,10 +178,12 @@ fn enter_program() {
             },
             _ => {}
         }
-    });
+    })?;
+    Ok(())
 }
 
 // #[cfg_attr(target_arch = "wasm32", wasm_bindgen(main))]
-pub fn main() {
-    enter_program()
+pub fn main() -> anyhow::Result<()> {
+    run()?;
+    Ok(())
 }

@@ -1,4 +1,3 @@
-use anyhow::*;
 use image::GenericImageView;
 
 pub struct Texture {
@@ -6,7 +5,7 @@ pub struct Texture {
     pub size: wgpu::Extent3d,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
-} 
+}
 
 impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
