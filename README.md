@@ -1,4 +1,4 @@
-# Digital Twin Basics
+# WebGPU Robotic Simulator
 My project for Northeastern's CS4300 Computer Graphics with Professor Shah.
 I built a basic robot simulator which parses a URDF file and can perform forward kinematics to control the joints of the robot.
 ![2023-12-07-193455_963x730_scrot](https://github.com/tw-ilson/wgpu-robotic-simulator/assets/63574793/aaf6ad26-1de9-4c07-9734-8a86e9e01a1e)
