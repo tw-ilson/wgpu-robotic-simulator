@@ -89,7 +89,7 @@ async fn run_until_error() {
 async fn run() -> anyhow::Result<()> {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window = winit::window::Window::new(&event_loop).unwrap();
-    let mut program = WGPUGraphics::new(800, 600, &window).await;
+    let mut program = WGPUGraphics::new(800, 600, &window).await?;
 
     #[cfg(target_arch = "wasm32")]
     {

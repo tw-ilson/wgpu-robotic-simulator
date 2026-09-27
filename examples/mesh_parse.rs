@@ -46,7 +46,7 @@ fn run_loop_web(mut program: WGPUGraphics, event_loop: EventLoop<()>) {
 pub async fn run() -> anyhow::Result<()> {
     let event_loop = winit::event_loop::EventLoop::new()?;
     let window = winit::window::Window::new(&event_loop)?;
-    let mut program = WGPUGraphics::new(1240, 860, &window).await;
+    let mut program = WGPUGraphics::new(1240, 860, &window).await?;
 
     let shader_string = include_str!("../shaders/shader.wgsl");
 

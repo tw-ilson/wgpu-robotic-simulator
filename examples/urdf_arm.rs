@@ -19,7 +19,7 @@ use wasm_bindgen::prelude::*;
 async fn run() -> anyhow::Result<()> {
     let event_loop = winit::event_loop::EventLoop::new()?;
     let window = winit::window::Window::new(&event_loop)?;
-    let mut program = WGPUGraphics::new(1240, 860, &window).await;
+    let mut program = WGPUGraphics::new(1240, 860, &window).await?;
     program.get_backend_info();
 
     #[cfg(target_arch = "wasm32")]

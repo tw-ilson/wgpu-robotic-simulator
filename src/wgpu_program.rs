@@ -38,7 +38,7 @@ pub struct WGPUState<'a> {
 async fn retrieve_adapter_device(
     instance: &wgpu::Instance,
     surface: &wgpu::Surface<'_>,
-) -> (wgpu::Adapter, wgpu::Device, wgpu::Queue) {
+) -> anyhow::Result<(wgpu::Adapter, wgpu::Device, wgpu::Queue)> {
     // NOTE: this must stay async. On web (wasm32) the adapter/device
     // requests resolve through the browser event loop, so blocking on them
     // (e.g. futures::executor::block_on) hangs or panics. Callers drive this
@@ -52,7 +52,11 @@ async fn retrieve_adapter_device(
             ),
         })
         .await
-        .expect("unable to find appropriate adapter");
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No WebGL2/GPU adapter found. This demo needs a browser with WebGL2 enabled                  (hardware acceleration turned on)."
+            )
+        })?;
     let (device, queue) = adapter
         .request_device(
             &wgpu::DeviceDescriptor {
@@ -77,8 +81,8 @@ async fn retrieve_adapter_device(
             None,
         )
         .await
-        .expect("Failed to get device");
-    (adapter, device, queue)
+        .map_err(|e| anyhow::anyhow!("Failed to get GPU device: {e:?}"))?;
+    Ok((adapter, device, queue))
 }
 
 impl Vertex {
@@ -326,7 +330,7 @@ impl<'a> WGPUGraphics<'a> {
     }
 
     //constructor
-    pub async fn new(width: u32, height: u32, window: &'a Window) -> Self {
+    pub async fn new(width: u32, height: u32, window: &'a Window) -> anyhow::Result<Self> {
         // let window = Window::new(event).expect("unable to create winit window");
         if window
             .set_cursor_grab(winit::window::CursorGrabMode::Locked)
@@ -362,7 +366,7 @@ impl<'a> WGPUGraphics<'a> {
         });
         let surface = instance.create_surface(wgpu::SurfaceTarget::from(window)).expect("unable to create surface");
 
-        let (adapter, device, queue) = retrieve_adapter_device(&instance, &surface).await;
+        let (adapter, device, queue) = retrieve_adapter_device(&instance, &surface).await?;
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities
@@ -425,7 +429,7 @@ impl<'a> WGPUGraphics<'a> {
         };
 
         program.default_state();
-        program
+        Ok(program)
     }
 
     pub fn draw_mesh_list(
