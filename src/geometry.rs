@@ -3,7 +3,6 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::convert::{From, Into};
 use std::fmt;
-use std::fs::File;
 use std::io::{BufRead, BufReader};
 // use std::io::Read;
 use bytemuck::{Pod, Zeroable};
@@ -415,9 +414,36 @@ fn parse_ascii_stl(fstring: String) -> TriMesh {
         },
     }
 }
+/// Read mesh file bytes. On native targets this reads from the filesystem
+/// (relative to the process working directory, e.g. the repo root when run
+/// with cargo). On web there is no filesystem, so meshes referenced by the
+/// URDFs are embedded into the binary at compile time.
+#[cfg(not(target_arch = "wasm32"))]
+fn read_mesh_bytes(fname: &str) -> Vec<u8> {
+    std::fs::read(fname).expect("unable to read file")
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_mesh_bytes(fname: &str) -> Vec<u8> {
+    // Meshes referenced by the URDF assets, embedded for web deployment.
+    // Add new entries here if other URDFs are used on web.
+    let bytes: &[u8] = match fname {
+        "assets/meshes/base.stl" => include_bytes!("../assets/meshes/base.stl"),
+        "assets/meshes/finger_base.stl" => include_bytes!("../assets/meshes/finger_base.stl"),
+        "assets/meshes/finger_tip.stl" => include_bytes!("../assets/meshes/finger_tip.stl"),
+        "assets/meshes/forearm.stl" => include_bytes!("../assets/meshes/forearm.stl"),
+        "assets/meshes/hand.stl" => include_bytes!("../assets/meshes/hand.stl"),
+        "assets/meshes/swivel.stl" => include_bytes!("../assets/meshes/swivel.stl"),
+        "assets/meshes/upperarm.stl" => include_bytes!("../assets/meshes/upperarm.stl"),
+        "assets/meshes/wrist.stl" => include_bytes!("../assets/meshes/wrist.stl"),
+        _ => panic!("mesh not embedded for web: {}", fname),
+    };
+    bytes.to_vec()
+}
+
 fn parse_stl(fname: String) -> TriMesh {
     // let mut file = std::fs::File::open(fname).expect("Unable to open file");
-    let bytes = std::fs::read(fname).expect("unable to read file");
+    let bytes = read_mesh_bytes(&fname);
     if &bytes[0..6] == b"solid " {
         // parse_ascii_stl(std::fs::read_to_string(fname).expect("could not read file"))
         parse_ascii_stl(String::from_utf8(bytes).expect("could not convert to utf8"))
@@ -427,21 +453,8 @@ fn parse_stl(fname: String) -> TriMesh {
 }
 
 fn parse_obj(fname: String) -> TriMesh {
-    let file = match File::open(fname) {
-        Ok(file) => file,
-        Err(_) => {
-            println!("FILE not found!");
-            std::process::exit(-1);
-        }
-    };
-    // enum State {
-    //     Wait,
-    //     Vertex,
-    //     Normal,
-    //     Face,
-    // }
-
-    let reader = BufReader::new(file);
+    let bytes = read_mesh_bytes(&fname);
+    let reader = BufReader::new(std::io::Cursor::new(bytes));
     // let mut state = State::Wait;
     let mut vertices: Vec<glm::Vec3> = Vec::new();
     let mut normals: Vec<glm::Vec3> = Vec::new();

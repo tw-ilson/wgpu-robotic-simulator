@@ -13,12 +13,23 @@ use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
 };
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 
-pub fn run() -> anyhow::Result<()> {
+async fn run() -> anyhow::Result<()> {
     let event_loop = winit::event_loop::EventLoop::new()?;
     let window = winit::window::Window::new(&event_loop)?;
-    let mut program = WGPUGraphics::new(1240, 860, &window);
+    let mut program = WGPUGraphics::new(1240, 860, &window).await;
     program.get_backend_info();
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Winit prevents sizing with CSS, so we have to set
+        // the size manually when on web.
+        // (The canvas is attached to #wasm-example by WGPUGraphics::new.)
+        use winit::dpi::PhysicalSize;
+        let _ = program.window.request_inner_size(PhysicalSize::new(1240, 860));
+    }
 
     let mut robot = RobotDescriptor::from_str(include_str!("../assets/xarm.urdf"))
         .expect("unable to read urdf");
@@ -114,7 +125,31 @@ pub fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn main() -> anyhow::Result<()> {
-    run()?;
-    Ok(())
+pub fn main() {
+    start();
+}
+
+/// Entry point for both native and web.
+///
+/// On web this is invoked automatically by wasm-bindgen on module load
+/// (`#[wasm_bindgen(start)]`). GPU setup is async: the browser event loop
+/// drives it via `spawn_local`, while native blocks on it.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
+pub fn start() {
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "wasm32")] {
+            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+            console_log::init_with_level(log::Level::Warn).expect("Couldn't initialize logger");
+            wasm_bindgen_futures::spawn_local(run_until_error());
+        } else {
+            env_logger::init();
+            futures::executor::block_on(run_until_error());
+        }
+    }
+}
+
+async fn run_until_error() {
+    if let Err(e) = run().await {
+        log::error!("run failed: {e:?}");
+    }
 }

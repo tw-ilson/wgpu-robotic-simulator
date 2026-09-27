@@ -19,3 +19,37 @@ To build the library with an up-to-date Rust toolchain:
 
 To run the XArm example:
 > cargo run --example=urdf_arm
+
+## Web deployment
+
+The `urdf_arm` example also builds for the browser (WebGL2 via wgpu's `webgl`
+feature). Robot meshes are embedded into the binary, so no asset server is
+needed — only the generated `pkg/` directory.
+
+Prerequisites: the wasm target and a `wasm-bindgen-cli` matching the
+`wasm-bindgen` crate version in `Cargo.lock` (0.2.118):
+
+> rustup target add wasm32-unknown-unknown
+> cargo install wasm-bindgen-cli --version 0.2.118
+
+Build and generate the JS bindings from the repo root:
+
+> cargo build --target wasm32-unknown-unknown --example urdf_arm
+> wasm-bindgen target/wasm32-unknown-unknown/debug/examples/urdf_arm.wasm \
+>     --out-dir pkg --target web --out-name urdf_arm
+
+Then serve the repo root with any static file server and open `index.html`:
+
+> python3 -m http.server 8080
+
+Notes and current limitations:
+
+- GPU setup is async: on web the example drives it with
+  `wasm_bindgen_futures::spawn_local`, on native with `block_on`.
+- `wgpu::Features::TEXTURE_BINDING_ARRAY` is only requested on native; the
+  WebGL2 fallback device is created without it (no shader in the repo uses it).
+- Rayon falls back to sequential execution on `wasm32-unknown-unknown`
+  (no threads / `SharedArrayBuffer` required).
+- The old toy examples (`stl_parse`, `urdf_dog`, `pixelsort`, `particles`)
+  predate the winit 0.29 migration and do not build; only `urdf_arm`,
+  `wgpu_triangle`, and `mesh_parse` are kept building.

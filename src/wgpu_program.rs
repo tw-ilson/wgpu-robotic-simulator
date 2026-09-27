@@ -35,43 +35,50 @@ pub struct WGPUState<'a> {
     pub bindings: Option<Bindings>,
 }
 
-fn retrieve_adapter_device(
+async fn retrieve_adapter_device(
     instance: &wgpu::Instance,
-    surface: &wgpu::Surface,
+    surface: &wgpu::Surface<'_>,
 ) -> (wgpu::Adapter, wgpu::Device, wgpu::Queue) {
-    let device_fut = async {
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                force_fallback_adapter: false,
-                compatible_surface: Some(
-                    surface
-                ),
-            })
-            .await
-            .expect("unable to find appropriate adapter");
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::TEXTURE_BINDING_ARRAY,
-                    // Need to do the spatial transforms on
-                    // shader!
-                    // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                    required_limits: if cfg!(target_arch = "wasm32") {
-                        wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
-                    } else {
-                        wgpu::Limits::default()
-                    },
-                    memory_hints: wgpu::MemoryHints::default()
+    // NOTE: this must stay async. On web (wasm32) the adapter/device
+    // requests resolve through the browser event loop, so blocking on them
+    // (e.g. futures::executor::block_on) hangs or panics. Callers drive this
+    // with spawn_local on wasm and block_on on native.
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            force_fallback_adapter: false,
+            compatible_surface: Some(
+                surface
+            ),
+        })
+        .await
+        .expect("unable to find appropriate adapter");
+    let (device, queue) = adapter
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                // TEXTURE_BINDING_ARRAY is not universally available on web
+                // (e.g. the WebGL2 fallback), so only require it on native.
+                required_features: if cfg!(target_arch = "wasm32") {
+                    wgpu::Features::empty()
+                } else {
+                    wgpu::Features::TEXTURE_BINDING_ARRAY
                 },
-                None,
-            )
-            .await
-            .expect("Failed to get device");
-        (adapter, device, queue)
-    };
-    futures::executor::block_on(device_fut)
+                // Need to do the spatial transforms on
+                // shader!
+                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
+                required_limits: if cfg!(target_arch = "wasm32") {
+                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
+                } else {
+                    wgpu::Limits::default()
+                },
+                memory_hints: wgpu::MemoryHints::default()
+            },
+            None,
+        )
+        .await
+        .expect("Failed to get device");
+    (adapter, device, queue)
 }
 
 impl Vertex {
@@ -319,7 +326,7 @@ impl<'a> WGPUGraphics<'a> {
     }
 
     //constructor
-    pub fn new(width: u32, height: u32, window: &'a Window) -> Self {
+    pub async fn new(width: u32, height: u32, window: &'a Window) -> Self {
         // let window = Window::new(event).expect("unable to create winit window");
         if window
             .set_cursor_grab(winit::window::CursorGrabMode::Locked)
@@ -327,24 +334,23 @@ impl<'a> WGPUGraphics<'a> {
         {}
         window.set_cursor_visible(false);
 
-        // #[cfg(target_arch = "wasm32")]
-        // {
-        //     // Winit prevents sizing with CSS, so we have to set
-        //     // the size manually when on web.
-        //     // use winit::dpi::PhysicalSize;
-        //     // program.window.set_inner_size(PhysicalSize::new(width, height));
-        //
-        //     use winit::platform::web::WindowExtWebSys;
-        //     web_sys::window()
-        //         .and_then(|win| win.document())
-        //         .and_then(|doc| {
-        //             let dst = doc.get_element_by_id("wasm-example")?;
-        //             let canvas = web_sys::Element::from(window.canvas());
-        //             dst.append_child(&canvas).ok()?;
-        //             Some(())
-        //         })
-        //         .expect("Couldn't append canvas to document body.");
-        // }
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Winit prevents sizing with CSS, so we have to set
+            // the size manually when on web.
+            use winit::platform::web::WindowExtWebSys;
+            web_sys::window()
+                .and_then(|win| win.document())
+                .and_then(|doc| {
+                    let dst = doc.get_element_by_id("wasm-example")?;
+                    let canvas = web_sys::Element::from(
+                        window.canvas().expect("winit window has no canvas"),
+                    );
+                    dst.append_child(&canvas).ok()?;
+                    Some(())
+                })
+                .expect("Couldn't append canvas to document body.");
+        }
 
         let size = PhysicalSize::new(width, height);
         let _ = window.request_inner_size(size);
@@ -356,7 +362,7 @@ impl<'a> WGPUGraphics<'a> {
         });
         let surface = instance.create_surface(wgpu::SurfaceTarget::from(window)).expect("unable to create surface");
 
-        let (adapter, device, queue) = retrieve_adapter_device(&instance, &surface);
+        let (adapter, device, queue) = retrieve_adapter_device(&instance, &surface).await;
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
         let swapchain_format = swapchain_capabilities

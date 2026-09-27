@@ -66,37 +66,38 @@ fn vertex_specification() -> (Vec<Vertex>, Vec<u32>) {
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
-fn run() -> anyhow::Result<()> {
+pub fn start() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
             console_log::init_with_level(log::Level::Warn).expect("Could't initialize logger");
+            // GPU setup is async and the browser event loop drives the future.
+            wasm_bindgen_futures::spawn_local(run_until_error());
         } else {
             env_logger::init();
+            futures::executor::block_on(run_until_error());
         }
     }
+}
 
+async fn run_until_error() {
+    if let Err(e) = run().await {
+        log::error!("run failed: {e:?}");
+    }
+}
+
+async fn run() -> anyhow::Result<()> {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window = winit::window::Window::new(&event_loop).unwrap();
-    let mut program = WGPUGraphics::new(800, 600, &window);
+    let mut program = WGPUGraphics::new(800, 600, &window).await;
 
     #[cfg(target_arch = "wasm32")]
     {
         // Winit prevents sizing with CSS, so we have to set
         // the size manually when on web.
+        // (The canvas is attached to #wasm-example by WGPUGraphics::new.)
         use winit::dpi::PhysicalSize;
-        program.window.set_inner_size(PhysicalSize::new(800, 600));
-
-        use winit::platform::web::WindowExtWebSys;
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| {
-                let dst = doc.get_element_by_id("wasm-example")?;
-                let canvas = web_sys::Element::from(program.window.canvas());
-                dst.append_child(&canvas).ok()?;
-                Some(())
-            })
-            .expect("Couldn't append canvas to document body.");
+        let _ = program.window.request_inner_size(PhysicalSize::new(800, 600));
     }
 
     let pipeline = program
@@ -190,7 +191,6 @@ fn run() -> anyhow::Result<()> {
 }
 
 // #[cfg_attr(target_arch = "wasm32", wasm_bindgen(main))]
-pub fn main() -> anyhow::Result<()> {
-    run()?;
-    Ok(())
+pub fn main() {
+    start();
 }
