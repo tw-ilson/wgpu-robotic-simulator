@@ -50,6 +50,10 @@ async fn run() -> anyhow::Result<()> {
     program.preloop(&mut |_| {
         println!("Called one time before the loop!");
     });
+    // Kick off the first redraw explicitly. On web (winit) no initial
+    // RedrawRequested is delivered, so without this the render loop
+    // below would never start (black canvas).
+    program.window.request_redraw();
     event_loop.run(move |event, control_flow| {
         match event {
             // INPUT

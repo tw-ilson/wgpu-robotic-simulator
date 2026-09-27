@@ -108,6 +108,10 @@ async fn run() -> anyhow::Result<()> {
     let vertex_buffer: wgpu::Buffer = program.create_vertex_buffer(&vertices);
     let index_buffer: wgpu::Buffer = program.create_index_buffer(&indices);
 
+    // Kick off the first redraw explicitly. On web (winit) no initial
+    // RedrawRequested is delivered, so without this the render loop
+    // below would never start (black canvas).
+    program.window.request_redraw();
     event_loop.run(move |event, window_target| {
         match event {
             Event::WindowEvent {
