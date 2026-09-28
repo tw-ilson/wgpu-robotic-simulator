@@ -332,11 +332,18 @@ impl<'a> WGPUGraphics<'a> {
     //constructor
     pub async fn new(width: u32, height: u32, window: &'a Window) -> anyhow::Result<Self> {
         // let window = Window::new(event).expect("unable to create winit window");
-        if window
-            .set_cursor_grab(winit::window::CursorGrabMode::Locked)
-            .is_err()
-        {}
-        window.set_cursor_visible(false);
+        // Pointer lock is desktop-only: on web requestPointerLock requires a
+        // user gesture and doesn't exist at all on iOS Safari, where calling
+        // it throws and then panics inside winit. The examples don't use
+        // mouse-look anyway, so skip cursor capture entirely on web.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if window
+                .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                .is_err()
+            {}
+            window.set_cursor_visible(false);
+        }
 
         #[cfg(target_arch = "wasm32")]
         {
