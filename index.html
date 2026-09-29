@@ -49,7 +49,12 @@
     <script>
         // Surface runtime errors in the page itself (no devtools needed).
         const errBox = document.getElementById('err');
-        const showErr = (msg) => { errBox.textContent += msg + '\n'; };
+        const showErr = (msg) => {
+            // wgpu's WebGL backend throws a benign control-flow exception
+            // that it explicitly says isn't an error; don't scare users.
+            if (msg.includes('Using exceptions for control flow')) return;
+            errBox.textContent += msg + '\n';
+        };
         window.addEventListener('error', (e) => showErr('ERROR: ' + (e.message || e.error)));
         window.addEventListener('unhandledrejection', (e) => showErr('REJECTION: ' + e.reason));
         const _ce = console.error.bind(console);
