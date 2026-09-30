@@ -56,6 +56,7 @@ impl CreatePipeline for WGPUGraphics<'_> {
         let pipeline_layout_desc = wgpu::PipelineLayoutDescriptor {
             label: Some("Compute Pipeline Layout"),
             bind_group_layouts,
+            // wgpu 22. v28 renames this to `immediate_size: u32`.
             push_constant_ranges: &[],
         };
 
@@ -70,6 +71,7 @@ impl CreatePipeline for WGPUGraphics<'_> {
                     label: Some("compute pipeline"),
                     layout: Some(&pipeline_layout),
                     module: &shader_module,
+                    // wgpu 22: entry_point is &str. v23 makes it Option<&str>.
                     entry_point: "main",
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     cache: None
@@ -89,6 +91,8 @@ impl CreatePipeline for WGPUGraphics<'_> {
                 ];
                 wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
+                    // wgpu 22. v29: bind_group_layouts becomes &[Option<&BindGroupLayout>];
+                    // v28: push_constant_ranges becomes `immediate_size: u32`.
                     bind_group_layouts: &bind_group_layouts,
                     push_constant_ranges: &[],
                 }
@@ -110,12 +114,15 @@ impl CreatePipeline for WGPUGraphics<'_> {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader_module,
+                    // wgpu 22: entry_point is &str. v23 makes it Option<&str>.
                     entry_point: "vs_main",
+                    // wgpu 22. v30: buffers becomes &[Option<&VertexBufferLayout>].
                     buffers: &[Vertex::desc()],
                     compilation_options: wgpu::PipelineCompilationOptions::default()
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader_module,
+                    // wgpu 22: entry_point is &str. v23 makes it Option<&str>.
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
                         format: self.config().format,
@@ -143,6 +150,7 @@ impl CreatePipeline for WGPUGraphics<'_> {
                 // depth_stencil: depth_format,
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: texture::Texture::DEPTH_FORMAT,
+                    // wgpu 22: plain bool/CompareFunction. v29 makes both Option.
                     depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: wgpu::StencilState::default(),

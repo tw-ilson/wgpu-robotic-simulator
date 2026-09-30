@@ -22,8 +22,22 @@ mint = "0.5.9"
 naga = "22.1.0"
 nalgebra-glm = "0.19.0"
 rand = "0.8.5"
-wgpu = { version="22.1.0", features=["glsl", "webgl"] }
-winit = "0.29.0"
+# Pinned: wgpu 22.1.0. Upgrading past this needs API migration (23-30):
+# - v23: entry_point fields become Option; set_bind_group takes Option
+# - v24: Instance::new takes &InstanceDescriptor; InstanceDescriptor fields
+#   dx12_shader_compiler/gles_minor_version move into backend_options
+# - v25: request_adapter returns Result instead of Option
+# - v27: DeviceDescriptor gains experimental_features field
+# - v28: push_constant_ranges -> immediate_size; RenderPassDescriptor gains multiview_mask
+# - v29: get_current_texture returns CurrentSurfaceTexture enum;
+#   bind_group_layouts and VertexState buffers become &[Option<..>];
+#   DepthStencilState depth_write_enabled/depth_compare become Option
+# - v30: SurfaceTexture::present() -> Queue::present(tex);
+#   SurfaceConfiguration gains color_space
+wgpu = { version="=22.1.0", features=["glsl", "webgl"] }
+# Pinned: winit 0.29. 0.30 reworks the event loop around the
+# ApplicationHandler trait; the examples are written against 0.29's API.
+winit = "=0.29.15"
 xml-rs = "0.8.19"
 anyhow = {version="1.0.75", features=["backtrace"]}
 rayon = "1.8.0"

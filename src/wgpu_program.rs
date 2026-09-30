@@ -52,6 +52,8 @@ async fn retrieve_adapter_device(
             ),
         })
         .await
+        // wgpu 22: request_adapter returns Option. v25 changed it to Result;
+        // this becomes .map_err(...) on upgrade.
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "No WebGL2/GPU adapter found. This demo needs a browser with WebGL2 enabled                  (hardware acceleration turned on)."
@@ -59,6 +61,7 @@ async fn retrieve_adapter_device(
         })?;
     let (device, queue) = adapter
         .request_device(
+            // wgpu 22 layout. v27 adds an `experimental_features` field here.
             &wgpu::DeviceDescriptor {
                 label: None,
                 // TEXTURE_BINDING_ARRAY is not universally available on web
@@ -365,6 +368,9 @@ impl<'a> WGPUGraphics<'a> {
 
         let size = PhysicalSize::new(width, height);
         let _ = window.request_inner_size(size);
+        // wgpu 22: Instance::new takes the descriptor by value and these are
+        // top-level fields. v24 takes &InstanceDescriptor and moves
+        // dx12_shader_compiler/gles_minor_version into a nested backend_options.
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             flags: wgpu::InstanceFlags::default(),
@@ -384,6 +390,8 @@ impl<'a> WGPUGraphics<'a> {
             .unwrap_or(swapchain_capabilities.formats[0]);
 
         let config = wgpu::SurfaceConfiguration {
+            // wgpu 22 layout. v30 adds a `color_space` field
+            // (SurfaceColorSpace::Auto reproduces this behavior).
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
             width,
@@ -445,6 +453,8 @@ impl<'a> WGPUGraphics<'a> {
         buffer_list: &Vec<MeshBuffer>,
     ) {
         // self.set_clear_color((1.0, 1.0, 1.0, 1.0));
+        // wgpu 22: get_current_texture returns Result. v29 returns a
+        // CurrentSurfaceTexture enum instead (SurfaceError removed).
         let output = self
             .state
             .surface
@@ -460,6 +470,7 @@ impl<'a> WGPUGraphics<'a> {
                     label: Some("Render Encoder"),
                 });
         {
+            // wgpu 22 layout. v28 adds a `multiview_mask` field here.
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -491,6 +502,8 @@ impl<'a> WGPUGraphics<'a> {
             )
         }
         self.queue().submit(std::iter::once(encoder.finish()));
+        // wgpu 22: SurfaceTexture::present(). v30 replaces it with
+        // queue.present(output).
         output.present();
     }
     pub fn create_bindings(
@@ -605,6 +618,8 @@ where
         transform_bind_groups: &'a [wgpu::BindGroup],
         transform_index: usize,
     ) {
+        // wgpu 22: set_bind_group takes &BindGroup. v23 takes
+        // impl Into<Option<&BindGroup>>; pass Some(camera_bind_group) etc.
         self.set_bind_group(0, &camera_bind_group, &[]);
         self.set_bind_group(1, &light_bind_group, &[]);
         self.set_bind_group(2, &transform_bind_groups[transform_index], &[]);
