@@ -1,11 +1,8 @@
-use crate::bindings::create_uniform_bind_group;
 use crate::geometry::{BoxMesh, CylinderMesh, Polyhedron, SphereMesh, Transform, TriMesh};
-use crate::texture::Texture;
-use crate::wgpu_program::{MeshBuffer, WGPUGraphics};
 use glm;
-use itertools::Itertools;
 use std::str::FromStr;
-use xml::reader::{XmlEvent, XmlEvent::*};
+use xml::attribute::OwnedAttribute;
+use xml::reader::XmlEvent;
 use xml::EventReader;
 
 #[derive(Default, Debug, Copy, Clone)]
@@ -23,6 +20,7 @@ impl From<Origin> for Transform {
 #[derive(Default, Debug, Clone)]
 pub struct InertialBody {
     pub origin: Origin,
+    /// Accumulated world transform of the link frame. Recomputed by `build()`.
     pub transform: Transform,
     pub mass: f32,
     pub ixx: f32,
@@ -36,6 +34,8 @@ pub struct InertialBody {
 #[derive(Default, Debug, Clone)]
 pub struct VisualBody {
     pub origin: Origin,
+    /// World transform of the visual. Recomputed by `build()` as
+    /// `link_world * origin`; do not overwrite the local origin.
     pub transform: Transform,
     pub geometry: Polyhedron,
     pub material: Option<String>,
@@ -44,6 +44,7 @@ pub struct VisualBody {
 #[derive(Default, Debug, Clone)]
 pub struct CollisionBody {
     pub origin: Origin,
+    /// World transform of the collision shape. Recomputed by `build()`.
     pub transform: Transform,
     pub geometry: Polyhedron,
 }
@@ -51,9 +52,11 @@ pub struct CollisionBody {
 #[derive(Default, Debug, Clone)]
 pub struct Link {
     pub link_name: String,
-    pub visual: VisualBody,
+    /// URDF allows several `<visual>` elements per link; all are kept.
+    pub visuals: Vec<VisualBody>,
     pub inertial: InertialBody,
-    pub collision: CollisionBody,
+    /// URDF allows several `<collision>` elements per link; all are kept.
+    pub collisions: Vec<CollisionBody>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -91,6 +94,7 @@ pub struct Joint {
     limits: Option<JointLimits>,
     dynamics: Option<JointDynamics>,
 }
+
 #[derive(Default, Debug, Clone)]
 pub struct RobotDescriptor {
     pub name: Option<String>,
@@ -100,119 +104,116 @@ pub struct RobotDescriptor {
 
 type ParseRobotError = Box<dyn std::error::Error>;
 
+fn xml_error<E: std::fmt::Display>(e: E) -> ParseRobotError {
+    format!("XML error: {e}").into()
+}
+
+/// Look up an attribute by name. XML attribute order is not significant,
+/// so never index into the attribute list positionally.
+fn attr<'a>(attributes: &'a [OwnedAttribute], name: &str) -> Result<&'a str, ParseRobotError> {
+    attributes
+        .iter()
+        .find(|a| a.name.local_name == name)
+        .map(|a| a.value.as_str())
+        .ok_or_else(|| format!("expected attribute '{name}'").into())
+}
+
+/// Consume events until the matching end tag of the element whose start tag
+/// was just read. Used to skip unsupported elements and their subtrees.
+fn skip_element(xml_parser: &mut EventReader<&[u8]>) -> Result<(), ParseRobotError> {
+    let mut depth = 1u32;
+    loop {
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement { .. } => depth += 1,
+            XmlEvent::EndElement { .. } => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 //gets position, rotation from origin element
 fn parse_3f(s: &str) -> Result<glm::Vec3, ParseRobotError> {
-    let v: [f32; 3] = s
+    let v: Vec<f32> = s
         .split_whitespace()
         .map(|ns| ns.parse::<f32>())
         .collect::<Result<Vec<f32>, _>>()
-        .unwrap()
-        .try_into()
-        .unwrap();
-    Ok(v.into())
-}
-fn parse_4f(s: &str) -> Result<glm::Vec4, ParseRobotError> {
-    let v: [f32; 4] = s
-        .split_whitespace()
-        .map(|ns| ns.parse::<f32>())
-        .collect::<Result<Vec<f32>, _>>()
-        .unwrap()
-        .try_into()
-        .unwrap();
-    Ok(v.into())
-}
-fn parse_origin(origin_event: XmlEvent) -> Result<Origin, ParseRobotError> {
-    if let XmlEvent::StartElement { attributes, .. } = origin_event {
-        let xyz_attr = attributes
-            .iter()
-            .find(|&a| a.name.local_name == "xyz")
-            .ok_or("expected attribute xyz")
-            .unwrap();
-        let xyz = parse_3f(&xyz_attr.value).unwrap();
-        let rpy_attr = attributes.iter().find(|&a| a.name.local_name == "rpy");
-        let rpy = if let Some(attr) = rpy_attr {
-            let value = parse_3f(&attr.value).ok();
-            value
-        } else {
-            None
-        };
-        Ok(Origin { xyz, rpy })
-    } else {
-        unreachable!();
+        .map_err(|e| format!("expected 3 floats in '{s}': {e}"))?;
+    if v.len() != 3 {
+        return Err(format!("expected 3 floats in '{s}', got {}", v.len()).into());
     }
+    Ok(glm::vec3(v[0], v[1], v[2]))
+}
+
+fn parse_4f(s: &str) -> Result<glm::Vec4, ParseRobotError> {
+    let v: Vec<f32> = s
+        .split_whitespace()
+        .map(|ns| ns.parse::<f32>())
+        .collect::<Result<Vec<f32>, _>>()
+        .map_err(|e| format!("expected 4 floats in '{s}': {e}"))?;
+    if v.len() != 4 {
+        return Err(format!("expected 4 floats in '{s}', got {}", v.len()).into());
+    }
+    Ok(glm::vec4(v[0], v[1], v[2], v[3]))
+}
+
+fn parse_origin(attributes: &[OwnedAttribute]) -> Result<Origin, ParseRobotError> {
+    let xyz = parse_3f(attr(attributes, "xyz")?)?;
+    let rpy = attributes
+        .iter()
+        .find(|a| a.name.local_name == "rpy")
+        .map(|a| parse_3f(&a.value))
+        .transpose()?;
+    Ok(Origin { xyz, rpy })
 }
 
 fn parse_link_geometry(xml_parser: &mut EventReader<&[u8]>) -> Result<Polyhedron, ParseRobotError> {
     let mut shape: Option<Polyhedron> = None;
     loop {
-        let event = xml_parser.next();
-        match event.unwrap() {
-            StartElement {
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement {
                 name, attributes, ..
             } => match name.local_name.as_str() {
                 "mesh" => {
-                    let fname = attributes
-                        .iter()
-                        .find(|&a| a.name.local_name == "filename")
-                        .ok_or("expected file name attribute")
-                        .unwrap()
-                        .value
-                        .to_owned();
-                    // if fname.starts_with("package://") {
-                    // }
-                    let mut poly = Polyhedron::from(fname.to_owned());
-                    if let Some(scale) = attributes.iter().find(|&a| a.name.local_name == "scale") {
-                        poly.scale_xyz(parse_3f(&scale.value).unwrap());
+                    let fname = attr(&attributes, "filename")?.to_owned();
+                    let mut poly = Polyhedron::from(fname);
+                    if let Some(scale) = attributes.iter().find(|a| a.name.local_name == "scale") {
+                        poly.scale_xyz(parse_3f(&scale.value)?);
                     }
                     shape = Some(poly);
                 }
-                "box" | "cylinder" | "sphere" => match name.local_name.as_str() {
-                    "box" => {
-                        let size_attr = attributes.get(0).ok_or("expected sized").unwrap();
-                        if size_attr.name.local_name == "size" {
-                            let size = parse_3f(&size_attr.value).unwrap();
-                            shape = Polyhedron::from(TriMesh::create_box(size)).into();
-                        } else {
-                            return Err("box requires size attribute".into());
-                        }
-                    }
-                    "cylinder" => {
-                        let l = attributes
-                            .iter()
-                            .find(|&a| a.name.local_name == "length")
-                            .ok_or("cylinder requires length")
-                            .unwrap()
-                            .value
-                            .parse::<f32>()
-                            .unwrap();
-                        let r = attributes
-                            .iter()
-                            .find(|&a| a.name.local_name == "radius")
-                            .ok_or("cylinder requires radius")
-                            .unwrap()
-                            .value
-                            .parse::<f32>()
-                            .unwrap();
-                        shape = Polyhedron::from(TriMesh::create_cylinder(r, l, 30)).into();
-                    }
-                    "sphere" => {
-                        let r = attributes
-                            .iter()
-                            .find(|&a| a.name.local_name == "radius")
-                            .ok_or("sphere requires radius")
-                            .unwrap()
-                            .value
-                            .parse::<f32>()
-                            .unwrap();
-                        shape = Polyhedron::from(TriMesh::create_sphere(r, 20, 20)).into();
-                    }
-                    _ => return Err("unknown element".into()),
-                },
-                _ => return Err("unknown element".into()),
+                "box" => {
+                    let size = parse_3f(attr(&attributes, "size")?)?;
+                    shape = Some(Polyhedron::from(TriMesh::create_box(size)));
+                }
+                "cylinder" => {
+                    let l: f32 = attr(&attributes, "length")?
+                        .parse()
+                        .map_err(|e| format!("bad cylinder length: {e}"))?;
+                    let r: f32 = attr(&attributes, "radius")?
+                        .parse()
+                        .map_err(|e| format!("bad cylinder radius: {e}"))?;
+                    shape = Some(Polyhedron::from(TriMesh::create_cylinder(r, l, 30)));
+                }
+                "sphere" => {
+                    let r: f32 = attr(&attributes, "radius")?
+                        .parse()
+                        .map_err(|e| format!("bad sphere radius: {e}"))?;
+                    shape = Some(Polyhedron::from(TriMesh::create_sphere(r, 20, 20)));
+                }
+                other => {
+                    // Unknown shape: skip it rather than failing the whole file.
+                    eprintln!("warning: skipping unknown geometry '{other}'");
+                    skip_element(xml_parser)?;
+                }
             },
-            EndElement { name } => {
+            XmlEvent::EndElement { name } => {
                 if name.local_name == "geometry" {
-                    return shape.ok_or("no shape provided?".into());
+                    return shape.ok_or_else(|| "no shape provided?".into());
                 }
             }
             _ => {}
@@ -222,46 +223,37 @@ fn parse_link_geometry(xml_parser: &mut EventReader<&[u8]>) -> Result<Polyhedron
 
 fn parse_link_visual(
     xml_parser: &mut EventReader<&[u8]>,
-    mut link: Link,
     materials: &mut Vec<Material>,
-) -> Result<Link, ParseRobotError> {
-    let mut transform: Option<Transform> = None;
+) -> Result<VisualBody, ParseRobotError> {
+    let mut visual = VisualBody::default();
     loop {
-        let event = xml_parser.next();
-        match event.clone().unwrap() {
-            StartElement {
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement {
                 name, attributes, ..
             } => match name.local_name.as_str() {
                 "origin" => {
-                    let Origin { xyz, rpy } = parse_origin(event.unwrap()).unwrap();
-                    transform = Some(Transform::new(xyz, rpy.unwrap_or_default()));
+                    visual.origin = parse_origin(&attributes)?;
+                    visual.transform = visual.origin.into();
                 }
-                "geometry" => link.visual.geometry = parse_link_geometry(xml_parser).unwrap(),
+                "geometry" => visual.geometry = parse_link_geometry(xml_parser)?,
                 "material" => {
-                    if link.visual.material.is_none() {
-                        let mat_name = &attributes
-                            .iter()
-                            .find(|&a| a.name.local_name == "name")
-                            .ok_or("material requires name")
-                            .unwrap()
-                            .value
-                            .to_owned();
-                        link.visual.material = Some(mat_name.to_owned());
-                        // if let Some(mat) = materials.iter().find(|m| m.name == *mat_name) {
-                        //     link.geometry.set_color(mat.color);
-                        // } else {
-                        if let Ok(mat) = parse_material(xml_parser, mat_name.to_owned()) {
-                            materials.push(mat);
-                        }
-                        // }
+                    let mat_name = attr(&attributes, "name")?.to_owned();
+                    visual.material = Some(mat_name.clone());
+                    // Inline material definition: register it. A bare
+                    // reference (no <color>) simply yields Err here, which
+                    // is fine -- the top-level material pass resolves it.
+                    if let Ok(mat) = parse_material(xml_parser, mat_name) {
+                        materials.push(mat);
                     }
                 }
-                _ => {}
+                other => {
+                    eprintln!("warning: skipping unknown visual element '{other}'");
+                    skip_element(xml_parser)?;
+                }
             },
-            EndElement { name } => {
-                link.visual.transform = transform.unwrap_or_default();
+            XmlEvent::EndElement { name } => {
                 if name.local_name == "visual" {
-                    return Ok(link);
+                    return Ok(visual);
                 }
             }
             _ => {}
@@ -271,102 +263,87 @@ fn parse_link_visual(
 
 fn parse_link_collision(
     xml_parser: &mut EventReader<&[u8]>,
-    mut link: Link,
-) -> Result<Link, ParseRobotError> {
+) -> Result<CollisionBody, ParseRobotError> {
+    let mut collision = CollisionBody::default();
     loop {
-        let event = xml_parser.next();
-        match event.clone().unwrap() {
-            StartElement {
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement {
                 name, attributes, ..
             } => match name.local_name.as_str() {
-                "origin" => link.collision.transform = parse_origin(event.unwrap()).unwrap().into(),
-                "geometry" => {
-                    link.collision.geometry = parse_link_geometry(xml_parser).unwrap();
+                "origin" => {
+                    collision.origin = parse_origin(&attributes)?;
+                    collision.transform = collision.origin.into();
                 }
-                _ => {}
+                "geometry" => {
+                    collision.geometry = parse_link_geometry(xml_parser)?;
+                }
+                other => {
+                    eprintln!("warning: skipping unknown collision element '{other}'");
+                    skip_element(xml_parser)?;
+                }
             },
-            EndElement { name } => {
+            XmlEvent::EndElement { name } => {
                 if name.local_name == "collision" {
-                    return Ok(link);
+                    return Ok(collision);
                 }
             }
             _ => {}
         }
     }
 }
+
 fn parse_link_inertial(
     xml_parser: &mut EventReader<&[u8]>,
-    mut link: Link,
-) -> Result<Link, ParseRobotError> {
-    let mut origin: Option<Origin> = None;
+) -> Result<InertialBody, ParseRobotError> {
+    let mut origin = Origin::default();
     let mut mass: Option<f32> = None;
     let mut inertia: Option<[f32; 6]> = None;
     loop {
-        let event = xml_parser.next();
-        match event.clone().unwrap() {
-            StartElement {
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement {
                 name, attributes, ..
             } => match name.local_name.as_str() {
-                "origin" => origin = parse_origin(event.unwrap()).ok(),
-                "mass" => mass = attributes.get(0).unwrap().value.parse::<f32>().ok(),
-                "inertia" => {
-                    inertia = Some([
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixx") {
-                            a.value.parse::<f32>().unwrap()
-                        } else {
-                            0.0
-                        },
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "iyy") {
-                            a.value.parse::<f32>().unwrap()
-                        } else {
-                            0.0
-                        },
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "izz") {
-                            a.value.parse::<f32>().unwrap()
-                        } else {
-                            0.0
-                        },
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixy") {
-                            a.value.parse::<f32>().unwrap()
-                        } else {
-                            0.0
-                        },
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "ixz") {
-                            a.value.parse::<f32>().unwrap()
-                        } else {
-                            0.0
-                        },
-                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == "iyz") {
-                            a.value.parse::<f32>().unwrap()
-                        } else {
-                            0.0
-                        },
-                    ]);
+                "origin" => origin = parse_origin(&attributes)?,
+                "mass" => {
+                    mass = Some(
+                        attr(&attributes, "value")?
+                            .parse()
+                            .map_err(|e| format!("bad mass value: {e}"))?,
+                    )
                 }
-                _ => {}
-            },
-            EndElement { name } => {
-                if name.local_name == "inertial" {
-                    if let Some(mass) = mass {
-                        if let Some([ixx, iyy, izz, ixy, ixz, iyz]) = inertia {
-                            link.inertial = InertialBody {
-                                origin: origin.unwrap_or_default(),
-                                transform: origin.unwrap_or_default().into(),
-                                mass,
-                                ixx,
-                                iyy,
-                                izz,
-                                ixy,
-                                ixz,
-                                iyz,
-                            };
-                            return Ok(link);
-                        } else {
-                            panic!("inertial body requires moments of inertia!")
+                "inertia" => {
+                    let mut vals = [0.0f32; 6];
+                    for (slot, key) in vals.iter_mut().zip(["ixx", "iyy", "izz", "ixy", "ixz", "iyz"]) {
+                        if let Some(a) = attributes.iter().find(|a| a.name.local_name == key) {
+                            *slot = a
+                                .value
+                                .parse()
+                                .map_err(|e| format!("bad inertia {key}: {e}"))?;
                         }
-                    } else {
-                        panic!("inertial body requires mass!")
                     }
+                    inertia = Some(vals);
+                }
+                other => {
+                    eprintln!("warning: skipping unknown inertial element '{other}'");
+                    skip_element(xml_parser)?;
+                }
+            },
+            XmlEvent::EndElement { name } => {
+                if name.local_name == "inertial" {
+                    let mass = mass.ok_or("inertial body requires mass!")?;
+                    let [ixx, iyy, izz, ixy, ixz, iyz] =
+                        inertia.ok_or("inertial body requires moments of inertia!")?;
+                    return Ok(InertialBody {
+                        origin,
+                        transform: origin.into(),
+                        mass,
+                        ixx,
+                        iyy,
+                        izz,
+                        ixy,
+                        ixz,
+                        iyz,
+                    });
                 }
             }
             _ => {}
@@ -382,17 +359,17 @@ fn parse_link(
     let mut link = Link::default();
     link.link_name = link_name;
     loop {
-        let event = xml_parser.next();
-        match event.clone().unwrap() {
-            StartElement { name, .. } => match name.local_name.as_str() {
-                "visual" => {
-                    link = parse_link_visual(xml_parser, link, materials).unwrap();
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement { name, .. } => match name.local_name.as_str() {
+                "visual" => link.visuals.push(parse_link_visual(xml_parser, materials)?),
+                "inertial" => link.inertial = parse_link_inertial(xml_parser)?,
+                "collision" => link.collisions.push(parse_link_collision(xml_parser)?),
+                other => {
+                    eprintln!("warning: skipping unknown link element '{other}'");
+                    skip_element(xml_parser)?;
                 }
-                "inertial" => link = parse_link_inertial(xml_parser, link).unwrap(),
-                "collision" => link = parse_link_collision(xml_parser, link).unwrap(),
-                _ => {}
             },
-            EndElement { name } => {
+            XmlEvent::EndElement { name } => {
                 if name.local_name == "link" {
                     return Ok(link);
                 }
@@ -406,7 +383,7 @@ pub fn parse_joint(
     xml_parser: &mut EventReader<&[u8]>,
     joint_name: String,
     joint_type: JointType,
-    links: &Vec<Link>,
+    links: &[Link],
 ) -> Result<Joint, ParseRobotError> {
     let mut parent_name: Option<String> = None;
     let mut child_name: Option<String> = None;
@@ -416,105 +393,80 @@ pub fn parse_joint(
     let mut dynamics: Option<JointDynamics> = None;
 
     loop {
-        let event = xml_parser.next();
-        match event.clone().unwrap() {
-            StartElement {
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement {
                 name, attributes, ..
             } => match name.local_name.as_str() {
-                "parent" => {
-                    parent_name = Some(
-                        attributes
-                            .get(0)
-                            .expect("parent requires name")
-                            .value
-                            .clone(),
-                    )
-                }
-                "child" => {
-                    child_name = Some(
-                        attributes
-                            .get(0)
-                            .expect("child requires name")
-                            .value
-                            .clone(),
-                    )
-                }
-                "origin" => origin = Some(parse_origin(event.clone().unwrap()).unwrap()),
-                "axis" => {
-                    let attr = attributes.get(0).ok_or("expected attribute xyz").unwrap();
-                    axis = Some(parse_3f(&attr.value).unwrap());
-                }
+                "parent" => parent_name = Some(attr(&attributes, "link")?.to_owned()),
+                "child" => child_name = Some(attr(&attributes, "link")?.to_owned()),
+                "origin" => origin = Some(parse_origin(&attributes)?),
+                "axis" => axis = Some(parse_3f(attr(&attributes, "xyz")?)?),
                 "limit" => {
-                    let (mut effort, mut lower, mut upper, mut velocity) = (0., 0., 0., 0.);
-                    for attr in attributes {
-                        match attr.name.local_name.as_str() {
-                            "effort" => effort = attr.value.parse::<f32>().unwrap(),
-                            "lower" => lower = attr.value.parse::<f32>().unwrap(),
-                            "upper" => upper = attr.value.parse::<f32>().unwrap(),
-                            "velocity" => velocity = attr.value.parse::<f32>().unwrap(),
-                            _ => {
-                                panic!("unkown attribute in limit")
-                            }
+                    let mut lim = JointLimits::default();
+                    for a in &attributes {
+                        let v: f32 = a
+                            .value
+                            .parse()
+                            .map_err(|e| format!("bad limit attribute: {e}"))?;
+                        match a.name.local_name.as_str() {
+                            "effort" => lim.effort = v,
+                            "lower" => lim.lower = v,
+                            "upper" => lim.upper = v,
+                            "velocity" => lim.velocity = v,
+                            // Ignore extensibility attributes instead of panicking.
+                            _ => {}
                         }
                     }
-                    limits = Some(JointLimits {
-                        effort,
-                        velocity,
-                        lower,
-                        upper,
-                    });
+                    limits = Some(lim);
                 }
                 "dynamics" => {
-                    let (mut damping, mut friction) = (0.0, 0.0);
-                    for attr in attributes {
-                        match attr.name.local_name.as_str() {
-                            "damping" => damping = attr.value.parse::<f32>().unwrap(),
-                            "friction" => friction = attr.value.parse::<f32>().unwrap(),
-                            _ => {
-                                panic!("unknown attribute in dynamics")
-                            }
+                    let mut dyn_ = JointDynamics::default();
+                    for a in &attributes {
+                        let v: f32 = a
+                            .value
+                            .parse()
+                            .map_err(|e| format!("bad dynamics attribute: {e}"))?;
+                        match a.name.local_name.as_str() {
+                            "damping" => dyn_.damping = v,
+                            "friction" => dyn_.friction = v,
+                            _ => {}
                         }
                     }
-                    dynamics = Some(JointDynamics { damping, friction });
+                    dynamics = Some(dyn_);
                 }
+                // Elements like <calibration>, <safety_controller> and
+                // <mimic> are valid URDF but irrelevant here; skip them
+                // instead of failing the parse.
                 _ => {
-                    eprintln!("{}", name.local_name.as_str());
-                    return Err("possibly unsupported feature".into());
+                    skip_element(xml_parser)?;
                 }
             },
-            EndElement { name } => {
+            XmlEvent::EndElement { name } => {
                 if name.local_name == "joint" {
                     break;
                 }
             }
-            Whitespace(..) => {}
             _ => {}
         }
     }
-    let (parent, child);
-    let p_name = parent_name.ok_or("parent element is required!").unwrap();
-    parent = links
+    let p_name = parent_name.ok_or("parent element is required!")?;
+    let parent = links
         .iter()
         .position(|l| l.link_name == p_name)
-        .ok_or(format!("no known link with name {}", p_name))
-        .unwrap();
-    let c_name = child_name.ok_or("child element is required!").unwrap();
-    child = links
+        .ok_or_else(|| format!("no known link with name {p_name}"))?;
+    let c_name = child_name.ok_or("child element is required!")?;
+    let child = links
         .iter()
         .position(|l| l.link_name == c_name)
-        .ok_or(format!("no known link with name {}", c_name))
-        .unwrap();
-    let transform = if let Some(Origin { xyz, rpy }) = origin {
-        Transform::new(xyz, rpy.unwrap_or_default())
-    } else {
-        Transform::default()
-    };
+        .ok_or_else(|| format!("no known link with name {c_name}"))?;
+    let origin = origin.unwrap_or_default();
+    let transform = Transform::from(origin);
     Ok(Joint {
         joint_name,
         joint_type,
         parent,
         child,
-        origin: origin.unwrap_or_default(),
+        origin,
         transform,
         axis,
         limits,
@@ -527,66 +479,40 @@ struct Material {
     name: String,
     color: glm::Vec3,
 }
+
 fn parse_material(
     xml_parser: &mut EventReader<&[u8]>,
     material_name: String,
 ) -> Result<Material, ParseRobotError> {
-    let color: glm::Vec3;
     loop {
-        let event = xml_parser.next().unwrap();
-        match event {
-            StartElement {
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement {
                 name, attributes, ..
             } => match name.local_name.as_str() {
                 "color" => {
-                    let attr = attributes
-                        .iter()
-                        .find(|&a| a.name.local_name == "rgba")
-                        .ok_or("color must have rgba value")
-                        .unwrap();
-                    color = parse_4f(&attr.value).unwrap().xyz();
+                    let rgba = parse_4f(attr(&attributes, "rgba")?)?;
                     return Ok(Material {
                         name: material_name,
-                        color,
+                        color: rgba.xyz(),
                     });
                 }
-                "texture" => {
-                    unimplemented!()
+                // Textures aren't supported; skip the element instead of
+                // panicking so the rest of the material still parses.
+                "texture" => skip_element(xml_parser)?,
+                other => {
+                    return Err(format!("unknown element '{other}' in material").into());
                 }
-                _ => return Err("unknown element in material".into()),
             },
-            EndElement { name } => {
+            XmlEvent::EndElement { name } => {
                 if name.local_name == "material" {
                     return Err("could not parse material".into());
                 }
             }
-            Whitespace(..) => {}
-            _ => {
-                return Err("could not parse material".into());
-            }
-        }
-    }
-}
-fn parse_transmission(
-    mut xml_parser: EventReader<&[u8]>,
-    name: Option<String>
-    ) -> Result<(), ParseRobotError> {
-    let joints: Vec<String> = Vec::new();
-    loop {
-        let event = xml_parser.next();
-        match event.unwrap() {
-            StartElement { name, attributes, .. } =>
-                match name.local_name.as_str() {
-                    "type" => {},
-                    "joint" => {},
-                    "actuator" => {},
-                    _=> {}
-                },
-            EndElement { name } => if name.local_name.as_str() == "transmission" { return Ok(()) }
             _ => {}
         }
     }
 }
+
 fn parse_robot(
     mut xml_parser: EventReader<&[u8]>,
     robot_name: Option<String>,
@@ -594,66 +520,42 @@ fn parse_robot(
     let mut links = Vec::new();
     let mut joints = Vec::new();
     let mut materials = Vec::<Material>::new();
-    // let mut attr_name: String = "".into();
     loop {
-        let event = xml_parser.next();
-        match event.unwrap() {
-            StartElement {
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement {
                 name, attributes, ..
-            } => {
-                match name.local_name.as_str() {
-                    "link" => {
-                        let attr = attributes
-                            .iter()
-                            .find(|a| a.name.local_name == "name")
-                            .ok_or("link requires name")
-                            .unwrap();
-                        // attr_name = attr.value.to_owned();
-                        links.push(parse_link(&mut xml_parser, attr.value.to_owned(), &mut materials).unwrap())
-                    }
-                    "joint" => {
-                        let attr = attributes
-                            .iter()
-                            .find(|a| a.name.local_name == "name")
-                            .ok_or("joint requires name")
-                            .unwrap();
-                        // attr_name = attr.value.to_owned();
-                        let joint_type: JointType;
-                        if let Some(attr) = attributes.get(1) {
-                            assert!(attr.name.local_name == "type");
-                            match attr.value.as_str() {
-                                "fixed" => joint_type = JointType::Fixed,
-                                "revolute" => joint_type = JointType::Revolute,
-                                "continuous" => joint_type = JointType::Continuous,
-                                "prismatic" => joint_type = JointType::Prismatic,
-                                "floating" => joint_type = JointType::Floating,
-                                _ => return Err("unrecognized joint type".into()),
-                            }
-                        } else {
-                            return Err("joint requires type attribute".into());
-                        }
-                        joints.push(
-                            parse_joint(&mut xml_parser, attr.value.to_owned(), joint_type, &links).unwrap(),
-                        )
-                    }
-                    "transmission" => {panic!("unsupported feature: transmission")},
-                    "sensor" => {panic!("unsupported feature: sensor")},
-                    "material" => {
-                        let attr = attributes
-                            .iter()
-                            .find(|a| a.name.local_name == "name")
-                            .ok_or("material requires name")
-                            .unwrap();
-                        materials.push(parse_material(&mut xml_parser, attr.value.to_owned()).unwrap())
-                    }
-                    _ => {
-                        return Err(
-                            format!("unexpected element name! \"{}\"", name.local_name).into()
-                        )
-                    }
+            } => match name.local_name.as_str() {
+                "link" => {
+                    let link_name = attr(&attributes, "name")?.to_owned();
+                    links.push(parse_link(&mut xml_parser, link_name, &mut materials)?);
                 }
-            }
-            EndElement { name } => {
+                "joint" => {
+                    let joint_name = attr(&attributes, "name")?.to_owned();
+                    // Look the type up by name: XML attribute order is not
+                    // significant, so positional indexing is a bug.
+                    let joint_type = match attr(&attributes, "type")? {
+                        "fixed" => JointType::Fixed,
+                        "revolute" => JointType::Revolute,
+                        "continuous" => JointType::Continuous,
+                        "prismatic" => JointType::Prismatic,
+                        "floating" => JointType::Floating,
+                        other => return Err(format!("unrecognized joint type '{other}'").into()),
+                    };
+                    joints.push(parse_joint(
+                        &mut xml_parser,
+                        joint_name,
+                        joint_type,
+                        &links,
+                    )?);
+                }
+                // Transmissions, sensors and simulator extensions (e.g.
+                // gazebo tags) are valid URDF but out of scope here; skip
+                // their subtrees instead of failing.
+                _ => {
+                    skip_element(&mut xml_parser)?;
+                }
+            },
+            XmlEvent::EndElement { name } => {
                 if name.local_name == "robot" {
                     break;
                 }
@@ -663,26 +565,21 @@ fn parse_robot(
     }
 
     //setup colors
-    for mat in materials {
+    for mat in &materials {
         for link in links.iter_mut() {
-            // println!("{:?}", link.visual.material);
-            if link
-                .visual
-                .material
-                .clone()
-                .is_some_and(|mn| mn == mat.name)
-            {
-                // println!("{:?}", mat);
-                link.visual.geometry.set_color(mat.color);
+            for visual in link.visuals.iter_mut() {
+                if visual.material.as_deref() == Some(mat.name.as_str()) {
+                    visual.geometry.set_color(mat.color);
+                }
             }
         }
     }
 
-    return Ok(RobotDescriptor {
+    Ok(RobotDescriptor {
         name: robot_name,
         links,
         joints,
-    });
+    })
 }
 
 impl FromStr for RobotDescriptor {
@@ -690,21 +587,21 @@ impl FromStr for RobotDescriptor {
     fn from_str(s: &str) -> Result<RobotDescriptor, ParseRobotError> {
         let mut xml_parser = EventReader::from_str(s);
         let mut robot_name: Option<String> = None;
-        let event = xml_parser.next();
-        match event.unwrap() {
-            StartDocument { .. } => {}
-            _ => return Err("Is this a valid XML URDF file.unwrap()".into()),
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartDocument { .. } => {}
+            _ => return Err("Is this a valid XML URDF file?".into()),
         }
-        let event = xml_parser.next();
-        match event.unwrap() {
-            StartElement {
+        match xml_parser.next().map_err(xml_error)? {
+            XmlEvent::StartElement {
                 name, attributes, ..
             } => {
-                assert!(name.local_name == "robot");
-                if let Some(attr) = attributes.iter().find(|a| a.name.local_name == "name") {
-                    robot_name = Some(attr.value.clone());
+                if name.local_name != "robot" {
+                    return Err("expected robot element as first element".into());
                 }
-                return parse_robot(xml_parser, robot_name);
+                if let Some(a) = attributes.iter().find(|a| a.name.local_name == "name") {
+                    robot_name = Some(a.value.clone());
+                }
+                parse_robot(xml_parser, robot_name)
             }
             _ => Err("expected robot element as first element".into()),
         }
@@ -712,75 +609,246 @@ impl FromStr for RobotDescriptor {
 }
 
 impl RobotDescriptor {
+    /// Every visual in the robot, in link order. Mesh buffers, transform
+    /// buffers and draw calls all iterate this order, keeping them in
+    /// lockstep (mesh i is drawn with transform i).
+    pub fn visuals(&self) -> impl Iterator<Item = &VisualBody> {
+        self.links.iter().flat_map(|l| l.visuals.iter())
+    }
+
+    /// Index of the root link: the link that is no joint's child.
+    /// Falls back to the first link for degenerate input.
+    fn root_link_index(&self) -> usize {
+        (0..self.links.len())
+            .find(|&i| !self.joints.iter().any(|j| j.child == i))
+            .unwrap_or(0)
+    }
+
+    /// Set joint positions. `theta` holds one value per joint, *including*
+    /// fixed joints (their entries are ignored). Revolute and prismatic
+    /// joints are clamped to their `<limit>` range when one is specified.
     pub fn set_joint_position(&mut self, theta: &[f32], relative: bool) {
         if theta.len() != self.joints.len() {
             panic!("expected {} got {}", self.joints.len(), theta.len())
         }
-        for (&th, j) in std::iter::zip(theta.into_iter(), &mut self.joints) {
+        for (th, j) in std::iter::zip(theta.iter(), self.joints.iter_mut()) {
             if !relative {
                 j.transform = j.origin.into();
             }
+            // Clamp to joint limits when present. (A missing bound leaves
+            // the default 0.0, so only clamp on a sane range.)
+            let limits = j.limits;
+            let clamped = |t: f32| {
+                if let Some(lim) = limits {
+                    if lim.lower <= lim.upper {
+                        return t.clamp(lim.lower, lim.upper);
+                    }
+                }
+                t
+            };
             match j.joint_type {
                 JointType::Revolute => {
-                    j.transform
-                        .rotate(j.axis.expect("revolute joint requires axis!"), th);
-                    /* check for limits */
+                    let axis = j.axis.expect("revolute joint requires axis!");
+                    j.transform.rotate(axis, clamped(*th));
                 }
                 JointType::Prismatic => {
-                    j.transform
-                        .translate(th * j.axis.expect("prismatic joint requires axis"));
+                    let axis = j.axis.expect("prismatic joint requires axis");
+                    j.transform.translate(clamped(*th) * axis);
                 }
                 JointType::Continuous => {
-                    j.transform
-                        .rotate(j.axis.expect("revolute joint requires axis!"), th);
+                    let axis = j.axis.expect("continuous joint requires axis!");
+                    j.transform.rotate(axis, *th);
                 }
-                JointType::Floating => { /* do nothing */ }
+                JointType::Floating => { /* 6 DOF; not modeled */ }
                 JointType::Fixed => { /* do nothing */ }
             }
         }
     }
+
     pub fn reset_joint_transforms(&mut self) {
         self.links.iter_mut().for_each(|l| {
             l.inertial.transform = l.inertial.origin.into();
-            l.visual.transform = l.visual.origin.into();
-            l.collision.transform = l.collision.origin.into();
+            l.visuals
+                .iter_mut()
+                .for_each(|v| v.transform = v.origin.into());
+            l.collisions
+                .iter_mut()
+                .for_each(|c| c.transform = c.origin.into());
         })
     }
-    fn walk_children(&self, cur_link: &Link) -> Vec<(usize, Transform)> {
-        self.joints
-            .iter()
-            .filter(|j| self.links[j.parent].link_name == cur_link.link_name)
-            .map(|j| {
-                let tf = cur_link.inertial.transform
-                    * j.transform
-                    * self.links[j.child].inertial.transform;
-                (j.child, tf)
-            })
-            .collect()
-    }
-    // Walk the DAG
+
+    /// Forward kinematics: walk the joint tree from the root link and
+    /// accumulate world transforms. Each visual/collision keeps its own
+    /// `<origin>` offset relative to its link frame.
     pub fn build(&mut self) {
-        //next, setup transforms
         self.reset_joint_transforms();
-        let base_link = self.links.get(0).expect("No links found.unwrap()");
-        let mut child_transforms = self.walk_children(base_link);
-        loop {
-            let mut queue: Option<Vec<(usize, Transform)>> = None;
-            for (c_id, c_tf) in &child_transforms {
-                // update link with new transform
-                self.links[*c_id].inertial.transform = *c_tf;
-                self.links[*c_id].visual.transform = *c_tf;
-                // query for correct transforms of children links
-                let mut v = self.walk_children(&self.links[*c_id]);
-                v.extend(queue.unwrap_or_default());
-                queue = Some(v);
+        if self.links.is_empty() {
+            return;
+        }
+        let root = self.root_link_index().min(self.links.len() - 1);
+        let root_world: Transform = self.links[root].inertial.origin.into();
+        let mut stack = vec![(root, root_world)];
+        while let Some((li, link_world)) = stack.pop() {
+            // Child link worlds, computed from immutable borrows first.
+            let children: Vec<(usize, Transform)> = self
+                .joints
+                .iter()
+                .filter(|j| j.parent == li)
+                .map(|j| {
+                    let child_origin: Transform = self.links[j.child].inertial.origin.into();
+                    (j.child, link_world * j.transform * child_origin)
+                })
+                .collect();
+            let link = &mut self.links[li];
+            link.inertial.transform = link_world;
+            for v in link.visuals.iter_mut() {
+                v.transform = link_world * Transform::from(v.origin);
             }
-            if let Some(qlist) = queue {
-                child_transforms = qlist;
-            } else {
-                break;
+            for c in link.collisions.iter_mut() {
+                c.transform = link_world * Transform::from(c.origin);
             }
+            stack.extend(children);
         }
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn translation(t: Transform) -> (f32, f32, f32) {
+        (t.tmatrix[(0, 3)], t.tmatrix[(1, 3)], t.tmatrix[(2, 3)])
+    }
+
+    const SIMPLE: &str = r#"<?xml version="1.0"?>
+<robot name="test">
+  <link name="base">
+    <visual><origin xyz="0 0 0"/><geometry><box size="1 1 1"/></geometry></visual>
+    <visual><origin xyz="1 0 0"/><geometry><box size="1 1 1"/></geometry></visual>
+    <inertial><origin xyz="0 0 0"/><mass value="1"/>
+      <inertia ixx="1" iyy="1" izz="1" ixy="0" ixz="0" iyz="0"/></inertial>
+  </link>
+  <link name="child">
+    <visual><origin xyz="0 2 0"/><geometry><sphere radius="0.5"/></geometry></visual>
+    <inertial><origin xyz="0 0 0"/><mass value="1"/>
+      <inertia ixx="1" iyy="1" izz="1" ixy="0" ixz="0" iyz="0"/></inertial>
+  </link>
+  <joint type="revolute" name="j1">
+    <parent link="base"/>
+    <child link="child"/>
+    <origin xyz="0 0 5"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1" upper="1" effort="10" velocity="10"/>
+    <calibration rising="0" falling="0"/>
+    <safety_controller k_velocity="1"/>
+    <mimic joint="j0" multiplier="1" offset="0"/>
+  </joint>
+  <transmission name="t1"><type>SimpleTransmission</type>
+    <joint name="j1"/><actuator name="m1"/></transmission>
+  <sensor name="s1"/>
+  <gazebo reference="base"><material>Gazebo/Blue</material></gazebo>
+</robot>"#;
+
+    #[test]
+    fn parses_despite_attribute_order_and_unsupported_elements() {
+        // type-before-name, rpy-before-xyz handled; transmission, sensor,
+        // calibration, safety_controller, mimic and gazebo skipped.
+        let robot = RobotDescriptor::from_str(SIMPLE).expect("should parse");
+        assert_eq!(robot.links.len(), 2);
+        assert_eq!(robot.joints.len(), 1);
+        assert!(matches!(robot.joints[0].joint_type, JointType::Revolute));
+    }
+
+    #[test]
+    fn keeps_all_visuals_per_link() {
+        let robot = RobotDescriptor::from_str(SIMPLE).expect("should parse");
+        let base = robot.links.iter().find(|l| l.link_name == "base").unwrap();
+        assert_eq!(base.visuals.len(), 2, "both <visual> elements must be kept");
+        assert_eq!(robot.visuals().count(), 3);
+    }
+
+    #[test]
+    fn visual_origins_survive_fk() {
+        let mut robot = RobotDescriptor::from_str(SIMPLE).expect("should parse");
+        robot.set_joint_position(&[0.0], false);
+        robot.build();
+        let base = robot.links.iter().find(|l| l.link_name == "base").unwrap();
+        let t0 = translation(base.visuals[0].transform);
+        let t1 = translation(base.visuals[1].transform);
+        assert!((t0.0 - 0.0).abs() < 1e-5 && (t0.1 - 0.0).abs() < 1e-5);
+        assert!((t1.0 - 1.0).abs() < 1e-5, "visual origin must offset the visual, got {t1:?}");
+        // child visual: joint origin (0,0,5) + visual origin (0,2,0)
+        let child = robot.links.iter().find(|l| l.link_name == "child").unwrap();
+        let tc = translation(child.visuals[0].transform);
+        assert!((tc.0 - 0.0).abs() < 1e-5 && (tc.1 - 2.0).abs() < 1e-5 && (tc.2 - 5.0).abs() < 1e-5,
+            "child visual world transform wrong: {tc:?}");
+    }
+
+    #[test]
+    fn joint_limits_are_clamped() {
+        let mut robot = RobotDescriptor::from_str(SIMPLE).expect("should parse");
+        robot.set_joint_position(&[100.0], false);
+        robot.build();
+        let child = robot.links.iter().find(|l| l.link_name == "child").unwrap();
+        // theta=100 clamped to upper=1 rad about z: visual at (0,2,0)
+        // rotated by 1 rad -> (-2 sin1, 2 cos1, 5)
+        let tc = translation(child.visuals[0].transform);
+        let (ex, ey) = (-2.0 * 1f32.sin(), 2.0 * 1f32.cos());
+        assert!((tc.0 - ex).abs() < 1e-4 && (tc.1 - ey).abs() < 1e-4,
+            "expected clamped rotation, got {tc:?}");
+    }
+
+    #[test]
+    fn root_link_found_when_not_first() {
+        let urdf = r#"<?xml version="1.0"?>
+<robot name="order">
+  <link name="child">
+    <visual><geometry><box size="1 1 1"/></geometry></visual>
+    <inertial><mass value="1"/>
+      <inertia ixx="1" iyy="1" izz="1" ixy="0" ixz="0" iyz="0"/></inertial>
+  </link>
+  <link name="base">
+    <visual><geometry><box size="1 1 1"/></geometry></visual>
+    <inertial><mass value="1"/>
+      <inertia ixx="1" iyy="1" izz="1" ixy="0" ixz="0" iyz="0"/></inertial>
+  </link>
+  <joint name="j" type="fixed"><parent link="base"/><child link="child"/>
+    <origin xyz="0 0 3"/></joint>
+</robot>"#;
+        let mut robot = RobotDescriptor::from_str(urdf).expect("should parse");
+        robot.build();
+        let child = robot.links.iter().find(|l| l.link_name == "child").unwrap();
+        let tc = translation(child.visuals[0].transform);
+        assert!((tc.2 - 3.0).abs() < 1e-5, "child should sit at z=3, got {tc:?}");
+    }
+
+    #[test]
+    fn malformed_floats_are_errors_not_panics() {
+        let urdf = r#"<?xml version="1.0"?>
+<robot name="bad">
+  <link name="base">
+    <visual><origin xyz="0 0 banana"/><geometry><box size="1 1 1"/></geometry></visual>
+    <inertial><mass value="1"/>
+      <inertia ixx="1" iyy="1" izz="1" ixy="0" ixz="0" iyz="0"/></inertial>
+  </link>
+</robot>"#;
+        assert!(RobotDescriptor::from_str(urdf).is_err());
+    }
+
+    #[test]
+    fn xarm_parses_with_every_visual() {
+        let robot = RobotDescriptor::from_str(include_str!("../assets/xarm.urdf"))
+            .expect("xarm.urdf should parse");
+        let total_visuals: usize = robot.links.iter().map(|l| l.visuals.len()).sum();
+        assert!(robot.links.iter().any(|l| l.visuals.len() > 1),
+            "xarm has links with several visuals");
+        let base = robot.links.iter().find(|l| l.link_name == "base_link").unwrap();
+        assert_eq!(base.visuals.len(), 2);
+        // the empty "world" link contributes no visual (and no empty mesh)
+        let world = robot.links.iter().find(|l| l.link_name == "world").unwrap();
+        assert!(world.visuals.is_empty());
+        assert_eq!(total_visuals, 12);
+        // colors applied by name
+        assert!(base.visuals.iter().all(|v| v.material.as_deref() == Some("blue")));
+    }
+}

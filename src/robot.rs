@@ -16,17 +16,18 @@ pub trait RobotGraphics {
 
 impl RobotGraphics for WGPUGraphics<'_> {
     fn robot_create_mesh_buffers(&mut self, robot: &RobotDescriptor) -> Vec<MeshBuffer> {
-        self.create_mesh_buffers(robot.links.iter().map(|l| &l.visual.geometry))
+        self.create_mesh_buffers(robot.visuals().map(|v| &v.geometry))
     }
     fn robot_assign_mesh_buffers(&mut self, robot: &RobotDescriptor, buffers: &Vec<MeshBuffer>) {
-        // Warning: order matters!
-        std::iter::zip(buffers, &robot.links).map(|(buf, link)| self.assign_mesh_buffer(&link.visual.geometry, buf)).collect()
+        // Warning: order matters! Mesh i is drawn with transform i, and both
+        // follow RobotDescriptor::visuals() order.
+        std::iter::zip(buffers, robot.visuals()).map(|(buf, v)| self.assign_mesh_buffer(&v.geometry, buf)).collect()
     }
     fn draw_robot(&mut self, robot: &RobotDescriptor, buffers: &Vec<MeshBuffer>, pipeline: &wgpu::RenderPipeline) {
         self.draw_mesh_list(pipeline, &buffers);
     }
     fn robot_create_transform_buffers(&mut self, robot: &RobotDescriptor) -> Vec<wgpu::Buffer> {
-        self.create_transform_buffers(robot.links.iter().map(|l| l.inertial.transform))
+        self.create_transform_buffers(robot.visuals().map(|v| v.transform))
     }
     fn robot_assign_transform_buffers(
         &mut self,
@@ -34,6 +35,6 @@ impl RobotGraphics for WGPUGraphics<'_> {
         buffers: &Vec<wgpu::Buffer>,
     ) {
         // std::iter::zip(buffers, &robot.links).for_each(|(b,l)| self.assign_uniform(b, &[l.inertial.transform]))
-        self.update_transforms(buffers, robot.links.iter().map(|l| l.inertial.transform))
+        self.update_transforms(buffers, robot.visuals().map(|v| v.transform))
     }
 }
