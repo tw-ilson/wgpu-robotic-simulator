@@ -90,7 +90,10 @@ pub struct Joint {
     child: usize,  // index of the link
     origin: Origin,
     transform: Transform,
-    axis: Option<glm::Vec3>, // axis in joint frame
+    /// Axis in the joint frame. The URDF spec defaults a missing <axis> to
+    /// (1,0,0); the parser applies that, so this is only None for
+    /// programmatically built joints.
+    axis: Option<glm::Vec3>,
     limits: Option<JointLimits>,
     dynamics: Option<JointDynamics>,
 }
@@ -162,7 +165,14 @@ fn parse_4f(s: &str) -> Result<glm::Vec4, ParseRobotError> {
 }
 
 fn parse_origin(attributes: &[OwnedAttribute]) -> Result<Origin, ParseRobotError> {
-    let xyz = parse_3f(attr(attributes, "xyz")?)?;
+    // Per the URDF spec both attributes are optional and default to "0 0 0";
+    // real-world files (e.g. xacro output) often omit xyz.
+    let xyz = attributes
+        .iter()
+        .find(|a| a.name.local_name == "xyz")
+        .map(|a| parse_3f(&a.value))
+        .transpose()?
+        .unwrap_or_default();
     let rpy = attributes
         .iter()
         .find(|a| a.name.local_name == "rpy")
@@ -180,11 +190,24 @@ fn parse_link_geometry(xml_parser: &mut EventReader<&[u8]>) -> Result<Polyhedron
             } => match name.local_name.as_str() {
                 "mesh" => {
                     let fname = attr(&attributes, "filename")?.to_owned();
-                    let mut poly = Polyhedron::from(fname);
-                    if let Some(scale) = attributes.iter().find(|a| a.name.local_name == "scale") {
-                        poly.scale_xyz(parse_3f(&scale.value)?);
+                    // Mesh files are external resources: a missing file or an
+                    // unsupported format (e.g. .dae) must not abort the whole
+                    // parse. Warn loudly and leave an empty geometry so the
+                    // kinematic structure still comes through.
+                    match Polyhedron::load_file(&fname) {
+                        Ok(mut poly) => {
+                            if let Some(scale) =
+                                attributes.iter().find(|a| a.name.local_name == "scale")
+                            {
+                                poly.scale_xyz(parse_3f(&scale.value)?);
+                            }
+                            shape = Some(poly);
+                        }
+                        Err(e) => {
+                            eprintln!("warning: {e}; using empty geometry");
+                            shape = Some(Polyhedron::default());
+                        }
                     }
-                    shape = Some(poly);
                 }
                 "box" => {
                     let size = parse_3f(attr(&attributes, "size")?)?;
@@ -206,14 +229,17 @@ fn parse_link_geometry(xml_parser: &mut EventReader<&[u8]>) -> Result<Polyhedron
                     shape = Some(Polyhedron::from(TriMesh::create_sphere(r, 20, 20)));
                 }
                 other => {
-                    // Unknown shape: skip it rather than failing the whole file.
+                    // Unknown shape (e.g. <capsule> from newer URDF revisions):
+                    // warn and continue with an empty geometry rather than
+                    // failing the whole file.
                     eprintln!("warning: skipping unknown geometry '{other}'");
                     skip_element(xml_parser)?;
+                    shape = Some(Polyhedron::default());
                 }
             },
             XmlEvent::EndElement { name } => {
                 if name.local_name == "geometry" {
-                    return shape.ok_or_else(|| "no shape provided?".into());
+                    return shape.ok_or_else(|| "empty <geometry> element".into());
                 }
             }
             _ => {}
@@ -379,12 +405,26 @@ fn parse_link(
     }
 }
 
+/// A joint whose parent/child link names have not been resolved to link
+/// indices yet. URDF allows a joint to reference links defined later in the
+/// file (or interleaved with joints), so resolution happens after the whole
+/// document is parsed.
+struct UnresolvedJoint {
+    joint_name: String,
+    joint_type: JointType,
+    parent_name: String,
+    child_name: String,
+    origin: Origin,
+    axis: Option<glm::Vec3>,
+    limits: Option<JointLimits>,
+    dynamics: Option<JointDynamics>,
+}
+
 pub fn parse_joint(
     xml_parser: &mut EventReader<&[u8]>,
     joint_name: String,
     joint_type: JointType,
-    links: &[Link],
-) -> Result<Joint, ParseRobotError> {
+) -> Result<UnresolvedJoint, ParseRobotError> {
     let mut parent_name: Option<String> = None;
     let mut child_name: Option<String> = None;
     let mut origin: Option<Origin> = None;
@@ -450,24 +490,16 @@ pub fn parse_joint(
         }
     }
     let p_name = parent_name.ok_or("parent element is required!")?;
-    let parent = links
-        .iter()
-        .position(|l| l.link_name == p_name)
-        .ok_or_else(|| format!("no known link with name {p_name}"))?;
     let c_name = child_name.ok_or("child element is required!")?;
-    let child = links
-        .iter()
-        .position(|l| l.link_name == c_name)
-        .ok_or_else(|| format!("no known link with name {c_name}"))?;
     let origin = origin.unwrap_or_default();
-    let transform = Transform::from(origin);
-    Ok(Joint {
+    // <axis> is optional per the URDF spec and defaults to (1,0,0).
+    let axis = Some(axis.unwrap_or_else(|| glm::vec3(1.0, 0.0, 0.0)));
+    Ok(UnresolvedJoint {
         joint_name,
         joint_type,
-        parent,
-        child,
+        parent_name: p_name,
+        child_name: c_name,
         origin,
-        transform,
         axis,
         limits,
         dynamics,
@@ -519,6 +551,7 @@ fn parse_robot(
 ) -> Result<RobotDescriptor, ParseRobotError> {
     let mut links = Vec::new();
     let mut joints = Vec::new();
+    let mut pending_joints = Vec::<UnresolvedJoint>::new();
     let mut materials = Vec::<Material>::new();
     loop {
         match xml_parser.next().map_err(xml_error)? {
@@ -541,12 +574,19 @@ fn parse_robot(
                         "floating" => JointType::Floating,
                         other => return Err(format!("unrecognized joint type '{other}'").into()),
                     };
-                    joints.push(parse_joint(
-                        &mut xml_parser,
-                        joint_name,
-                        joint_type,
-                        &links,
-                    )?);
+                    // Link names are resolved after the parse: URDF does not
+                    // require <link> elements to precede the <joint>s that
+                    // reference them (links and joints are often interleaved).
+                    pending_joints.push(parse_joint(&mut xml_parser, joint_name, joint_type)?);
+                }
+                // Top-level <material> definitions (name + <color>), resolved
+                // against visual references after the parse. A bare reference
+                // carries no color; ignore it like the visual parser does.
+                "material" => {
+                    let mat_name = attr(&attributes, "name")?.to_owned();
+                    if let Ok(mat) = parse_material(&mut xml_parser, mat_name) {
+                        materials.push(mat);
+                    }
                 }
                 // Transmissions, sensors and simulator extensions (e.g.
                 // gazebo tags) are valid URDF but out of scope here; skip
@@ -562,6 +602,40 @@ fn parse_robot(
             }
             _ => {}
         }
+    }
+
+    // Resolve joint link references now that every link is known.
+    for uj in pending_joints {
+        let parent = links
+            .iter()
+            .position(|l| l.link_name == uj.parent_name)
+            .ok_or_else(|| {
+                format!(
+                    "joint '{}' references unknown parent link '{}'",
+                    uj.joint_name, uj.parent_name
+                )
+            })?;
+        let child = links
+            .iter()
+            .position(|l| l.link_name == uj.child_name)
+            .ok_or_else(|| {
+                format!(
+                    "joint '{}' references unknown child link '{}'",
+                    uj.joint_name, uj.child_name
+                )
+            })?;
+        let transform = Transform::from(uj.origin);
+        joints.push(Joint {
+            joint_name: uj.joint_name,
+            joint_type: uj.joint_type,
+            parent,
+            child,
+            origin: uj.origin,
+            transform,
+            axis: uj.axis,
+            limits: uj.limits,
+            dynamics: uj.dynamics,
+        });
     }
 
     //setup colors
@@ -622,6 +696,117 @@ impl RobotDescriptor {
         (0..self.links.len())
             .find(|&i| !self.joints.iter().any(|j| j.child == i))
             .unwrap_or(0)
+    }
+
+    /// Structural sanity checks over the parsed descriptor, for vetting
+    /// third-party URDF files before simulating them. Returns a list of
+    /// human-readable problems; an empty list means the kinematic graph
+    /// looks sound (single root, all links reachable, no cycles, joint
+    /// references valid, every actuated joint has an axis).
+    pub fn validate(&self) -> Vec<String> {
+        let mut problems = Vec::new();
+        if self.links.is_empty() {
+            problems.push("robot has no links".to_owned());
+            return problems;
+        }
+        let mut seen = std::collections::HashSet::new();
+        for l in &self.links {
+            if !seen.insert(l.link_name.as_str()) {
+                problems.push(format!("duplicate link name '{}'", l.link_name));
+            }
+        }
+        let mut seen_j = std::collections::HashSet::new();
+        for j in &self.joints {
+            if !seen_j.insert(j.joint_name.as_str()) {
+                problems.push(format!("duplicate joint name '{}'", j.joint_name));
+            }
+            if j.parent >= self.links.len() {
+                problems.push(format!(
+                    "joint '{}' has parent index {} out of range",
+                    j.joint_name, j.parent
+                ));
+            }
+            if j.child >= self.links.len() {
+                problems.push(format!(
+                    "joint '{}' has child index {} out of range",
+                    j.joint_name, j.child
+                ));
+            }
+            if j.parent == j.child {
+                problems.push(format!("joint '{}' connects a link to itself", j.joint_name));
+            }
+            match j.joint_type {
+                JointType::Revolute | JointType::Prismatic | JointType::Continuous => {
+                    if j.axis.is_none() {
+                        problems.push(format!(
+                            "joint '{}' ({:?}) has no <axis>; set_joint_position would panic",
+                            j.joint_name, j.joint_type
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            if let Some(lim) = j.limits {
+                if lim.lower > lim.upper {
+                    problems.push(format!(
+                        "joint '{}' has inverted limits (lower {} > upper {})",
+                        j.joint_name, lim.lower, lim.upper
+                    ));
+                }
+            }
+        }
+
+        let is_child =
+            |i: usize| -> bool { self.joints.iter().any(|j| j.child == i) };
+        let roots: Vec<usize> = (0..self.links.len()).filter(|&i| !is_child(i)).collect();
+        if roots.is_empty() {
+            problems.push("no root link: every link is a joint child (cycle?)".to_owned());
+        } else if roots.len() > 1 {
+            let names: Vec<&str> =
+                roots.iter().map(|&i| self.links[i].link_name.as_str()).collect();
+            problems.push(format!(
+                "{} root links, expected 1 (disconnected?): {}",
+                roots.len(),
+                names.join(", ")
+            ));
+        }
+
+        // Reachability from the roots + cycle detection (iterative DFS with
+        // 0 = unvisited, 1 = on stack, 2 = done).
+        let mut color = vec![0u8; self.links.len()];
+        let mut has_cycle = false;
+        for &r in &roots {
+            let mut stack = vec![(r, false)];
+            while let Some((n, exiting)) = stack.pop() {
+                if exiting {
+                    color[n] = 2;
+                    continue;
+                }
+                if color[n] == 2 {
+                    continue;
+                }
+                if color[n] == 1 {
+                    has_cycle = true;
+                    continue;
+                }
+                color[n] = 1;
+                stack.push((n, true));
+                for c in self.joints.iter().filter(|j| j.parent == n).map(|j| j.child) {
+                    if c < self.links.len() {
+                        stack.push((c, false));
+                    }
+                }
+            }
+        }
+        if has_cycle {
+            problems.push("kinematic cycle detected".to_owned());
+        }
+        for (i, l) in self.links.iter().enumerate() {
+            if color[i] == 0 {
+                problems.push(format!("link '{}' is unreachable from the root", l.link_name));
+            }
+        }
+        problems
     }
 
     /// Set joint positions. `theta` holds one value per joint, *including*

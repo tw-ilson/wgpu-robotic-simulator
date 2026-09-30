@@ -417,14 +417,15 @@ fn parse_ascii_stl(fstring: String) -> TriMesh {
 /// Read mesh file bytes. On native targets this reads from the filesystem
 /// (relative to the process working directory, e.g. the repo root when run
 /// with cargo). On web there is no filesystem, so meshes referenced by the
-/// URDFs are embedded into the binary at compile time.
+/// URDFs are embedded into the binary at compile time. Missing or unknown
+/// files are an Err, not a panic, so URDF parsing can fail gracefully.
 #[cfg(not(target_arch = "wasm32"))]
-fn read_mesh_bytes(fname: &str) -> Vec<u8> {
-    std::fs::read(fname).expect("unable to read file")
+fn read_mesh_bytes(fname: &str) -> Result<Vec<u8>, String> {
+    std::fs::read(fname).map_err(|e| format!("unable to read mesh file '{fname}': {e}"))
 }
 
 #[cfg(target_arch = "wasm32")]
-fn read_mesh_bytes(fname: &str) -> Vec<u8> {
+fn read_mesh_bytes(fname: &str) -> Result<Vec<u8>, String> {
     // Meshes referenced by the URDF assets, embedded for web deployment.
     // Add new entries here if other URDFs are used on web.
     let bytes: &[u8] = match fname {
@@ -436,24 +437,25 @@ fn read_mesh_bytes(fname: &str) -> Vec<u8> {
         "assets/meshes/swivel.stl" => include_bytes!("../assets/meshes/swivel.stl"),
         "assets/meshes/upperarm.stl" => include_bytes!("../assets/meshes/upperarm.stl"),
         "assets/meshes/wrist.stl" => include_bytes!("../assets/meshes/wrist.stl"),
-        _ => panic!("mesh not embedded for web: {}", fname),
+        _ => return Err(format!("mesh not embedded for web: {fname}")),
     };
-    bytes.to_vec()
+    Ok(bytes.to_vec())
 }
 
-fn parse_stl(fname: String) -> TriMesh {
-    // let mut file = std::fs::File::open(fname).expect("Unable to open file");
-    let bytes = read_mesh_bytes(&fname);
+fn parse_stl(bytes: Vec<u8>) -> Result<TriMesh, String> {
+    if bytes.len() < 6 {
+        return Err("mesh file too small to be an STL".to_owned());
+    }
     if &bytes[0..6] == b"solid " {
-        // parse_ascii_stl(std::fs::read_to_string(fname).expect("could not read file"))
-        parse_ascii_stl(String::from_utf8(bytes).expect("could not convert to utf8"))
+        let text =
+            String::from_utf8(bytes).map_err(|e| format!("could not convert to utf8: {e}"))?;
+        Ok(parse_ascii_stl(text))
     } else {
-        parse_binary_stl(bytes.as_slice())
+        Ok(parse_binary_stl(bytes.as_slice()))
     }
 }
 
-fn parse_obj(fname: String) -> TriMesh {
-    let bytes = read_mesh_bytes(&fname);
+fn parse_obj(bytes: Vec<u8>) -> TriMesh {
     let reader = BufReader::new(std::io::Cursor::new(bytes));
     // let mut state = State::Wait;
     let mut vertices: Vec<glm::Vec3> = Vec::new();
@@ -513,13 +515,28 @@ fn parse_obj(fname: String) -> TriMesh {
     TriMesh { faces }
 }
 
+impl TriMesh {
+    /// Load a mesh file, returning Err instead of panicking on missing
+    /// files, unreadable data, or unsupported formats. Used by URDF parsing;
+    /// the `From` impl below keeps the old panicking behavior for the
+    /// examples that load known-good local files.
+    pub fn load(mesh_type: MeshType) -> Result<Self, String> {
+        let (fname, is_stl) = match mesh_type {
+            MeshType::STL(f) => (f, true),
+            MeshType::OBJ(f) => (f, false),
+        };
+        let bytes = read_mesh_bytes(&fname)?;
+        if is_stl {
+            parse_stl(bytes)
+        } else {
+            Ok(parse_obj(bytes))
+        }
+    }
+}
+
 impl From<MeshType> for TriMesh {
     fn from(mesh_type: MeshType) -> Self {
-        match mesh_type {
-            MeshType::STL(fname) => parse_stl(fname),
-            MeshType::OBJ(fname) => parse_obj(fname),
-            _ => panic!("type unsupported"),
-        }
+        Self::load(mesh_type).expect("failed to load mesh")
     }
 }
 
@@ -564,6 +581,21 @@ impl From<String> for Polyhedron {
             "obj" => Polyhedron::from(TriMesh::from(MeshType::OBJ(value))),
             _ => unimplemented!(),
         }
+    }
+}
+
+impl Polyhedron {
+    /// Load a mesh file referenced by a URDF `<mesh filename="..."/>`,
+    /// applying no scale. Unsupported formats (e.g. `.dae`) and unreadable
+    /// files return Err instead of panicking, so the URDF parser can report
+    /// the problem with the offending filename attached.
+    pub fn load_file(path: &str) -> Result<Self, String> {
+        let mesh_type = match path.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
+            "stl" => MeshType::STL(path.to_owned()),
+            "obj" => MeshType::OBJ(path.to_owned()),
+            ext => return Err(format!("unsupported mesh format '.{ext}' in '{path}'")),
+        };
+        Ok(Polyhedron::from(TriMesh::load(mesh_type)?))
     }
 }
 
